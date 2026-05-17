@@ -45,6 +45,7 @@
 | `z_image_gitee` |   ✅    |   ❌    |   ✅    |   ✅    | Gitee AI (z-image-turbo)                                                                                         |
 | `jimeng2api`    |   ✅    |   ✅    |   ✅    |   ✅    | 适用于[iptag/jimeng-api](https://github.com/iptag/jimeng-api)的适配器                                            |
 | `grok`          |   ✅    |   ✅    |   ✅    |   ✅    | Grok(Xai)适配器                                                                                                  |
+| `siliconflow_adapter` | ✅ | ✅ | ✅ | ✅ | SiliconFlow（硅基流动）`/v1/images/generations` 接口，支持 Kolors、Qwen-Image、Qwen-Image-Edit、Z-Image、Z-Image-Turbo，多参考图会映射到 `image`/`image2`/`image3` |
 持续更新中······
 #### 特殊说明
   - 配置了jimeng2api的话，会在每次启动时和每天凌晨自动领取积分(仅限直接连接即梦逆向,中转途径没有对应接口)
