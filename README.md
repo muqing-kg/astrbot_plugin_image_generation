@@ -4,9 +4,10 @@
 
 面向 AstrBot 的通用图像生成插件，支持多供应商、文生图、图生图、LLM 工具调用、预设、限流和安全审核。
 
-> 使用v1.1.0+版本的用户,请暂时不要使用人设添加功能！！！
-> 请等待[#8228](https://github.com/AstrBotDevs/AstrBot/pull/8228)修复合并到主线后再使用
-> 否则附带file类型的嵌套配置会导致webui卡死！！！
+> [!warning]
+> 使用v1.1.0+版本的用户,请暂时不要使用人设添加功能！！！  
+> 请等待[#8228](https://github.com/AstrBotDevs/AstrBot/pull/8228)修复合并到主线后再使用  
+> 否则附带file类型的嵌套配置会导致webui卡死！！！  
 
 ## 功能
 
