@@ -437,7 +437,7 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
                 },
                 "reference_images": {
                     "type": "array",
-                    "description": "可选。参考图 URL、绝对路径或插件数据目录 files/ 下的相对路径列表。仅支持图生图的模型会使用。",
+                    "description": "可选。参考图列表，支持 Linux/Windows 绝对路径、file:// 文件 URL 或 http(s) 网络图片 URL。仅支持图生图的模型会使用。",
                     "items": {"type": "string"},
                 },
             },

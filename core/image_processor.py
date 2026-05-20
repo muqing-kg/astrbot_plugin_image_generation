@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import hashlib
+import ntpath
 import os
+import posixpath
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
@@ -48,27 +50,23 @@ class ImageProcessor:
         return self._temp_dir
 
     def _resolve_local_path(self, value: str) -> str | None:
-        """Resolve an absolute/local plugin-data file path if available."""
+        """Resolve an absolute local path or file:// URI if available."""
         value = self._normalize_local_path_value(value)
+        if not self._is_absolute_path(value):
+            return None
         if os.path.exists(value) and os.path.isfile(value):
             return value
-
-        rel_path = value.replace("\\", "/").lstrip("/")
-        if not self._local_base_dir or not rel_path.startswith("files/"):
-            return None
-
-        candidate = os.path.realpath(os.path.join(self._local_base_dir, rel_path))
-        try:
-            if (
-                os.path.commonpath([self._local_base_dir, candidate])
-                != self._local_base_dir
-            ):
-                return None
-        except ValueError:
-            return None
-        if os.path.exists(candidate) and os.path.isfile(candidate):
-            return candidate
+        logger.warning(f"[ImageGen] 本地参考图不存在或不是文件: {value}")
         return None
+
+    def _is_absolute_path(self, value: str) -> bool:
+        """Return whether a value is a Linux/Windows absolute path."""
+        return os.path.isabs(value) or ntpath.isabs(value) or posixpath.isabs(value)
+
+    def _is_network_url(self, value: str) -> bool:
+        """Return whether a value is an HTTP(S) image source."""
+        scheme = urlparse(value).scheme.lower()
+        return scheme in {"http", "https"}
 
     def _normalize_local_path_value(self, value: str) -> str:
         """Normalize local file paths, including file:// URI values."""
@@ -82,9 +80,9 @@ class ImageProcessor:
 
         netloc = unquote(parsed.netloc)
         path = unquote(parsed.path)
-        if netloc and path:
+        if netloc and netloc.lower() != "localhost" and path:
             path = f"//{netloc}{path}"
-        elif netloc:
+        elif netloc and netloc.lower() != "localhost":
             path = netloc
 
         # AstrBot/平台可能传入 file:///E:\path 或 file:///E:/path。
@@ -95,11 +93,18 @@ class ImageProcessor:
     async def download_image(self, url: str) -> tuple[bytes, str] | None:
         """下载或读取图片并返回二进制数据和 MIME 类型。"""
         try:
+            url = url.strip()
+            if not url:
+                return None
+
             data: bytes | None = None
             if local_path := self._resolve_local_path(url):
                 with open(local_path, "rb") as f:
                     data = f.read()
             else:
+                if not self._is_network_url(url):
+                    logger.warning(f"[ImageGen] 不支持的图片来源: {url}")
+                    return None
                 # 使用插件临时目录
                 file_name = f"ref_{hashlib.md5(url.encode()).hexdigest()[:10]}"
                 path = os.path.join(self._temp_dir, file_name)
