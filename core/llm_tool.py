@@ -18,6 +18,7 @@ from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
+from .logging_utils import log_prefix, mask_sensitive, safe_log_text, safe_log_url
 from .types import ImageCapability
 
 
@@ -35,6 +36,7 @@ ASPECT_RATIO_OPTIONS = [
     "21:9",
 ]
 RESOLUTION_OPTIONS = ["1K", "2K", "4K"]
+LOG = log_prefix("LLMTool")
 
 
 def _extract_event(context: ContextWrapper[AstrAgentContext] | dict[str, Any]) -> Any:
@@ -248,14 +250,18 @@ async def _download_reference_images(
     references: Any,
     *,
     log_prefix: str,
+    task_id: str | None = None,
 ) -> list[tuple[bytes, str]]:
     """Download explicit reference images from URLs or local file paths."""
     images_data: list[tuple[bytes, str]] = []
+    task_log = log_prefix("LLMTool", task_id) if task_id else LOG
     for reference in _normalize_string_items(references):
         if image_data := await plugin.image_processor.download_image(reference):
             images_data.append(image_data)
         else:
-            logger.warning(f"[ImageGen] {log_prefix}参考图获取失败: {reference}")
+            logger.warning(
+                f"{task_log} {log_prefix}参考图获取失败: {safe_log_url(reference)}"
+            )
     return images_data
 
 
@@ -268,11 +274,13 @@ async def _collect_reference_images(
     avatar_references: Any = None,
     persona_image: str = "",
     persona_name: str | None = None,
+    task_id: str | None = None,
 ) -> list[tuple[bytes, str]]:
     """Collect explicit, persona, avatar, and message-context reference images."""
+    task_log = log_prefix("LLMTool", task_id) if task_id else LOG
     if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
         if reference_images or avatar_references or persona_image:
-            logger.warning("[ImageGen] 当前适配器不支持参考图，已忽略工具参考图参数")
+            logger.warning(f"{task_log} 当前适配器不支持参考图，已忽略工具参考图参数")
         return []
 
     images_data: list[tuple[bytes, str]] = []
@@ -284,13 +292,16 @@ async def _collect_reference_images(
         ):
             images_data.append(persona_image_data)
         else:
-            logger.warning(f"[ImageGen] 人设参考图获取失败: {persona_name}")
+            logger.warning(
+                f"{task_log} 人设参考图获取失败: {safe_log_text(persona_name)}"
+            )
 
     images_data.extend(
         await _download_reference_images(
             plugin,
             reference_images,
             log_prefix="显式",
+            task_id=task_id,
         )
     )
 
@@ -301,7 +312,7 @@ async def _collect_reference_images(
         avatar_user_ids.add(user_id)
         if avatar_data := await plugin.image_processor.get_avatar(user_id):
             images_data.append((avatar_data, "image/jpeg"))
-            logger.info(f"[ImageGen] 已添加 {user_id} 的头像作为参考图")
+            logger.info(f"{task_log} 已添加 {mask_sensitive(user_id)} 的头像作为参考图")
 
     images_data.extend(
         await plugin.image_processor.fetch_images_from_event(
@@ -333,8 +344,9 @@ async def _start_generation_task(
     check_result = plugin.usage_manager.check_rate_limit(event.unified_msg_origin)
     if isinstance(check_result, str):
         if check_result:
+            masked_uid = mask_sensitive(event.unified_msg_origin)
             logger.warning(
-                f"[ImageGen] 工具调用触发限制: {check_result} (用户: {event.unified_msg_origin})"
+                f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})"
             )
         return check_result
 
@@ -342,9 +354,8 @@ async def _start_generation_task(
         not plugin.config_manager.adapter_config
         or not plugin.config_manager.adapter_config.api_keys
     ):
-        logger.warning(
-            f"[ImageGen] 工具调用失败: 未配置 API Key (用户: {event.unified_msg_origin})"
-        )
+        masked_uid = mask_sensitive(event.unified_msg_origin)
+        logger.warning(f"{LOG} 工具调用失败: 未配置 API Key (用户: {masked_uid})")
         return "❌ 未配置 API Key，无法生成图片"
 
     prompt_allowed, prompt_reason = await plugin.safety_auditor.audit_prompt(
@@ -353,6 +364,10 @@ async def _start_generation_task(
     )
     if not prompt_allowed:
         return f"❌ 提示词审核未通过: {prompt_reason}"
+
+    task_id = hashlib.md5(
+        f"{time.time()}{event.unified_msg_origin}".encode()
+    ).hexdigest()[:8]
 
     try:
         images_data = await _collect_reference_images(
@@ -363,14 +378,15 @@ async def _start_generation_task(
             avatar_references=avatar_references,
             persona_image=persona_image,
             persona_name=persona_name,
+            task_id=task_id,
         )
     except Exception as exc:
-        logger.error(f"[ImageGen] 处理参考图失败: {exc}", exc_info=True)
+        logger.error(
+            f"{log_prefix('LLMTool', task_id)} 处理参考图失败: {exc}",
+            exc_info=True,
+        )
         images_data = []
 
-    task_id = hashlib.md5(
-        f"{time.time()}{event.unified_msg_origin}".encode()
-    ).hexdigest()[:8]
     plugin.create_background_task(
         plugin._generate_and_send_image_async(
             prompt=prompt,
@@ -494,9 +510,7 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
 
         event = _extract_event(context)
         if not event:
-            logger.warning(
-                f"[ImageGen] 工具调用上下文缺少事件。上下文类型: {type(context)}"
-            )
+            logger.warning(f"{LOG} 工具调用上下文缺少事件。上下文类型: {type(context)}")
             return "❌ 无法获取当前消息上下文"
 
         return await _start_generation_task(
@@ -682,15 +696,15 @@ def adjust_tool_parameters(
     if not (capabilities & ImageCapability.ASPECT_RATIO):
         if "aspect_ratio" in props:
             del props["aspect_ratio"]
-            logger.debug("[ImageGen] 适配器不支持宽高比，已从工具参数中移除")
+            logger.debug(f"{LOG} 适配器不支持宽高比，已从工具参数中移除")
 
     if not (capabilities & ImageCapability.RESOLUTION):
         if "resolution" in props:
             del props["resolution"]
-            logger.debug("[ImageGen] 适配器不支持分辨率，已从工具参数中移除")
+            logger.debug(f"{LOG} 适配器不支持分辨率，已从工具参数中移除")
 
     if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
         for key in ("avatar_references", "reference_images"):
             if key in props:
                 del props[key]
-        logger.debug("[ImageGen] 适配器不支持参考图，已从工具参数中移除参考图相关参数")
+        logger.debug(f"{LOG} 适配器不支持参考图，已从工具参数中移除参考图相关参数")

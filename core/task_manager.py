@@ -8,6 +8,16 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .logging_utils import log_prefix, safe_log_text
+
+
+LOG = log_prefix("TaskManager")
+
+
+def _task_name(name: str) -> str:
+    """Return a compact task name for logs."""
+    return safe_log_text(name, 80)
+
 
 class TaskManager:
     """统一的任务管理器，管理插件的后台任务和定时任务。"""
@@ -49,13 +59,15 @@ class TaskManager:
         if name in self._loop_tasks:
             self.stop_loop_task(name)
 
+        log_name = _task_name(name)
+
         async def _loop():
             if run_immediately:
                 try:
                     await coro_func()
                 except Exception as e:
                     logger.error(
-                        f"[ImageGen] [TaskManager] 定时任务 {name} 初始执行失败: {e}",
+                        f"{LOG} 定时任务 {log_name} 初始执行失败: {e}",
                         exc_info=True,
                     )
 
@@ -67,7 +79,7 @@ class TaskManager:
                     break
                 except Exception as e:
                     logger.error(
-                        f"[ImageGen] [TaskManager] 定时任务 {name} 执行出错: {e}",
+                        f"{LOG} 定时任务 {log_name} 执行出错: {e}",
                         exc_info=True,
                     )
 
@@ -75,16 +87,14 @@ class TaskManager:
         self._loop_tasks[name] = task
         self.background_tasks.add(task)
         task.add_done_callback(functools.partial(self._on_loop_task_done, name))
-        logger.info(
-            f"[ImageGen] [TaskManager] 定时任务 {name} 已启动 (间隔: {interval_seconds}s)"
-        )
+        logger.debug(f"{LOG} 定时任务 {log_name} 已启动 (间隔: {interval_seconds}s)")
 
     def stop_loop_task(self, name: str) -> None:
         """停止指定的定时任务。"""
         if task := self._loop_tasks.pop(name, None):
             if not task.done():
                 task.cancel()
-            logger.info(f"[ImageGen] [TaskManager] 定时任务 {name} 已停止")
+            logger.debug(f"{LOG} 定时任务 {_task_name(name)} 已停止")
 
     def _on_loop_task_done(self, name: str, task: asyncio.Task) -> None:
         """定时任务结束时的回调。"""
@@ -103,7 +113,7 @@ class TaskManager:
             coro_func: 返回协程的函数（任务的主逻辑）。
         """
         self._startup_tasks.append((name, coro_func))
-        logger.info(f"[ImageGen] [TaskManager] 已注册启动任务: {name}")
+        logger.debug(f"{LOG} 已注册启动任务: {_task_name(name)}")
 
     async def run_startup_tasks(self) -> None:
         """执行所有注册的启动任务。
@@ -111,31 +121,30 @@ class TaskManager:
         此方法应在插件初始化完成后调用一次。
         """
         if self._startup_completed:
-            logger.warning("[ImageGen] [TaskManager] 启动任务已执行过，跳过重复执行")
+            logger.warning(f"{LOG} 启动任务已执行过，跳过重复执行")
             return
 
         if not self._startup_tasks:
-            logger.info("[ImageGen] [TaskManager] 没有注册的启动任务")
+            logger.debug(f"{LOG} 没有注册的启动任务")
             self._startup_completed = True
             return
 
-        logger.info(
-            f"[ImageGen] [TaskManager] 开始执行 {len(self._startup_tasks)} 个启动任务"
-        )
+        logger.debug(f"{LOG} 开始执行 {len(self._startup_tasks)} 个启动任务")
 
         for name, coro_func in self._startup_tasks:
+            log_name = _task_name(name)
             try:
-                logger.info(f"[ImageGen] [TaskManager] 执行启动任务: {name}")
+                logger.debug(f"{LOG} 执行启动任务: {log_name}")
                 await coro_func()
-                logger.info(f"[ImageGen] [TaskManager] 启动任务 {name} 执行完成")
+                logger.debug(f"{LOG} 启动任务 {log_name} 执行完成")
             except Exception as e:
                 logger.error(
-                    f"[ImageGen] [TaskManager] 启动任务 {name} 执行失败: {e}",
+                    f"{LOG} 启动任务 {log_name} 执行失败: {e}",
                     exc_info=True,
                 )
 
         self._startup_completed = True
-        logger.info("[ImageGen] [TaskManager] 所有启动任务执行完毕")
+        logger.debug(f"{LOG} 所有启动任务执行完毕")
 
     def start_daily_task(
         self,
@@ -155,18 +164,18 @@ class TaskManager:
         if name in self._daily_tasks:
             self.stop_daily_task(name)
 
+        log_name = _task_name(name)
+
         async def _daily_loop():
             # 初始化上次执行日期
             if run_immediately:
                 try:
                     await coro_func()
                     self._last_run_dates[name] = datetime.now().strftime("%Y-%m-%d")
-                    logger.info(
-                        f"[ImageGen] [TaskManager] 每日任务 {name} 初始执行完成"
-                    )
+                    logger.debug(f"{LOG} 每日任务 {log_name} 初始执行完成")
                 except Exception as e:
                     logger.error(
-                        f"[ImageGen] [TaskManager] 每日任务 {name} 初始执行失败: {e}",
+                        f"{LOG} 每日任务 {log_name} 初始执行失败: {e}",
                         exc_info=True,
                     )
             else:
@@ -181,24 +190,22 @@ class TaskManager:
 
                     if current_date != last_run_date:
                         logger.info(
-                            f"[ImageGen] [TaskManager] 检测到日期变更 ({last_run_date} -> {current_date})，执行每日任务 {name}"
+                            f"{LOG} 检测到日期变更 ({last_run_date} -> {current_date})，执行每日任务 {log_name}"
                         )
                         try:
                             await coro_func()
                             self._last_run_dates[name] = current_date
-                            logger.info(
-                                f"[ImageGen] [TaskManager] 每日任务 {name} 执行完成"
-                            )
+                            logger.info(f"{LOG} 每日任务 {log_name} 执行完成")
                         except Exception as e:
                             logger.error(
-                                f"[ImageGen] [TaskManager] 每日任务 {name} 执行出错: {e}",
+                                f"{LOG} 每日任务 {log_name} 执行出错: {e}",
                                 exc_info=True,
                             )
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
                     logger.error(
-                        f"[ImageGen] [TaskManager] 每日任务 {name} 循环出错: {e}",
+                        f"{LOG} 每日任务 {log_name} 循环出错: {e}",
                         exc_info=True,
                     )
 
@@ -206,8 +213,8 @@ class TaskManager:
         self._daily_tasks[name] = task
         self.background_tasks.add(task)
         task.add_done_callback(functools.partial(self._on_daily_task_done, name))
-        logger.info(
-            f"[ImageGen] [TaskManager] 每日任务 {name} 已启动 (检查间隔: {check_interval_seconds}s)"
+        logger.debug(
+            f"{LOG} 每日任务 {log_name} 已启动 (检查间隔: {check_interval_seconds}s)"
         )
 
     def stop_daily_task(self, name: str) -> None:
@@ -216,7 +223,7 @@ class TaskManager:
             if not task.done():
                 task.cancel()
             self._last_run_dates.pop(name, None)
-            logger.info(f"[ImageGen] [TaskManager] 每日任务 {name} 已停止")
+            logger.debug(f"{LOG} 每日任务 {_task_name(name)} 已停止")
 
     def _on_daily_task_done(self, name: str, task: asyncio.Task) -> None:
         """每日任务结束时的回调。"""
@@ -237,4 +244,4 @@ class TaskManager:
         self._loop_tasks.clear()
         self._daily_tasks.clear()
         self._last_run_dates.clear()
-        logger.info("[ImageGen] [TaskManager] 所有后台任务已取消")
+        logger.debug(f"{LOG} 所有后台任务已取消")

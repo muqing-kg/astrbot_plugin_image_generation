@@ -13,6 +13,12 @@ from ..core.constants import (
     RESOLUTION_1K_MAP,
     RESOLUTION_2K_MAP,
 )
+from ..core.logging_utils import (
+    safe_log_error_body,
+    safe_log_mapping,
+    safe_log_text,
+    safe_log_url,
+)
 from ..core.types import (
     GenerationRequest,
     GenerationResult,
@@ -71,7 +77,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         prefix = self._get_log_prefix(request.task_id)
         mode = "图片编辑" if self._should_use_edits(request) else "文本生成图片"
         logger.info(
-            f"{prefix} 开始{mode}: prompt='{request.prompt[:50]}...', model='{self._model_name(request)}'"
+            f"{prefix} 开始{mode}: prompt='{safe_log_text(request.prompt, 50)}', model='{self._model_name(request)}'"
         )
         return None
 
@@ -92,14 +98,14 @@ class GiteeAIAdapter(BaseImageAdapter):
             form, fields = self._build_edit_form(request)
             url = self._endpoint_url("images/edits")
             kwargs: dict[str, Any] = {"data": form}
-            logger.debug(f"{prefix} 请求 URL: {url}, Form 字段: {fields}")
+            logger.debug(f"{prefix} 请求 URL: {safe_log_url(url)}, Form 字段: {fields}")
         else:
             payload = self._build_payload(request)
             url = self._endpoint_url("images/generations")
             headers["Content-Type"] = "application/json"
             kwargs = {"json": payload}
             logger.debug(
-                f"{prefix} 请求 URL: {url}, Payload 字段: {list(payload.keys())}"
+                f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}"
             )
 
         try:
@@ -114,7 +120,7 @@ class GiteeAIAdapter(BaseImageAdapter):
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {error_text}"
+                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                     )
                     return None, f"API 错误 ({resp.status})"
 
@@ -274,12 +280,14 @@ class GiteeAIAdapter(BaseImageAdapter):
             return None, f"API 错误: {response_error}"
 
         if "data" not in data:
-            return None, f"响应格式错误: {data}"
+            return None, f"响应格式错误: {safe_log_mapping(data)}"
 
         images: list[bytes] = []
         for item in data["data"]:
             if not isinstance(item, dict):
-                logger.warning(f"{prefix} 跳过无法识别的响应项: {item}")
+                logger.warning(
+                    f"{prefix} 跳过无法识别的响应项: {safe_log_mapping(item)}"
+                )
                 continue
 
             if "b64_json" in item:
@@ -287,15 +295,17 @@ class GiteeAIAdapter(BaseImageAdapter):
                     images.append(img_bytes)
             elif "url" in item:
                 # 如果返回的是 URL，需要下载
-                logger.debug(f"{prefix} 正在下载图像: {item['url'][:50]}...")
                 url = str(item["url"])
+                logger.debug(f"{prefix} 正在下载图像: {safe_log_url(url)}")
                 if url.startswith("data:image/"):
                     if img_bytes := self._decode_base64_image(url, task_id):
                         images.append(img_bytes)
                 elif img_bytes := await self._download_image(url, task_id):
                     images.append(img_bytes)
             else:
-                logger.warning(f"{prefix} 无法从响应项中提取图像: {item}")
+                logger.warning(
+                    f"{prefix} 无法从响应项中提取图像: {safe_log_mapping(item)}"
+                )
 
         if not images:
             return None, "未生成任何图像"
@@ -330,7 +340,9 @@ class GiteeAIAdapter(BaseImageAdapter):
                     data = await resp.read()
                     logger.debug(f"{prefix} 图像下载成功: {len(data)} bytes")
                     return data
-                logger.error(f"{prefix} 下载图像失败 ({resp.status}): {url}")
+                logger.error(
+                    f"{prefix} 下载图像失败 ({resp.status}): {safe_log_url(url)}"
+                )
         except Exception as e:  # noqa: BLE001
             logger.error(f"{prefix} 下载图像异常: {e}")
         return None

@@ -34,11 +34,15 @@ from .core.llm_tool import (
     PresetQueryTool,
     adjust_tool_parameters,
 )
+from .core.logging_utils import log_prefix, mask_sensitive, safe_log_text
 from .core.safety_auditor import SafetyAuditor
 from .core.task_manager import TaskManager
 from .core.types import GenerationRequest, ImageCapability, ImageData
 from .core.usage_manager import UsageManager
-from .core.utils import mask_sensitive, validate_aspect_ratio, validate_resolution
+from .core.utils import validate_aspect_ratio, validate_resolution
+
+
+LOG = log_prefix("Plugin")
 
 
 class _SafeFormatDict(dict[str, str]):
@@ -93,7 +97,7 @@ class ImageGenerationPlugin(Star):
             self.generator = ImageGenerator(self.config_manager.adapter_config)
             self.semaphore = asyncio.Semaphore(self.config_manager.max_concurrent_tasks)
         else:
-            logger.error("[ImageGen] 适配器配置加载失败，插件未初始化")
+            logger.error(f"{LOG} 适配器配置加载失败，插件未初始化")
 
         # 注册 LLM 工具
         self._register_llm_tools()
@@ -105,7 +109,7 @@ class ImageGenerationPlugin(Star):
         self.task_manager.create_task(self.task_manager.run_startup_tasks())
 
         logger.info(
-            f"[ImageGen] 插件加载完成，模型: {self.config_manager.adapter_config.model if self.config_manager.adapter_config else '未知'}"
+            f"{LOG} 插件加载完成，模型: {safe_log_text(self.config_manager.adapter_config.model if self.config_manager.adapter_config else '未知')}"
         )
 
     async def terminate(self):
@@ -114,9 +118,9 @@ class ImageGenerationPlugin(Star):
             if self.generator:
                 await self.generator.close()
             await self.task_manager.cancel_all()
-            logger.info("[ImageGen] 插件已卸载")
+            logger.info(f"{LOG} 插件已卸载")
         except Exception as exc:
-            logger.error(f"[ImageGen] 卸载清理出错: {exc}")
+            logger.error(f"{LOG} 卸载清理出错: {exc}", exc_info=True)
 
     # ---------------------- 内部工具 ----------------------
 
@@ -134,7 +138,7 @@ class ImageGenerationPlugin(Star):
                 self._adjust_tool_parameters(image_tool)
                 tools.append(image_tool)
             else:
-                logger.warning("[ImageGen] 生图工具已启用，但生成器未初始化")
+                logger.warning(f"{LOG} 生图工具已启用，但生成器未初始化")
 
         if self.config_manager.is_llm_tool_enabled(LLM_TOOL_PRESET_QUERY):
             tools.append(PresetQueryTool(plugin=self))
@@ -145,7 +149,7 @@ class ImageGenerationPlugin(Star):
         if tools:
             self.context.add_llm_tools(*tools)
             logger.info(
-                "[ImageGen] 已注册 LLM 工具: " + ", ".join(tool.name for tool in tools)
+                f"{LOG} 已注册 LLM 工具: " + ", ".join(tool.name for tool in tools)
             )
 
     def _setup_jimeng_token_task(self) -> None:
@@ -182,7 +186,7 @@ class ImageGenerationPlugin(Star):
             check_interval_seconds=300,  # 每5分钟检查一次日期变更
             run_immediately=False,  # 启动任务已处理，无需重复执行
         )
-        logger.info("[ImageGen] 已配置即梦2API自动领积分任务（启动时+每日）")
+        logger.info(f"{LOG} 已配置即梦2API自动领积分任务（启动时+每日）")
 
     def _adjust_tool_parameters(self, tool: ImageGenerationTool) -> None:
         """根据适配器能力动态调整工具参数。"""
@@ -251,7 +255,7 @@ class ImageGenerationPlugin(Star):
         try:
             return template.format_map(values)
         except Exception as exc:
-            logger.warning(f"[ImageGen] 开始任务提示模板格式化失败: {exc}")
+            logger.warning(f"{LOG} 开始任务提示模板格式化失败: {exc}")
             return "已开始生图任务{reference_images_block}{preset_block}".format_map(
                 values
             )
@@ -271,31 +275,32 @@ class ImageGenerationPlugin(Star):
         if not self.generator or not self.generator.adapter:
             return
 
+        if not task_id:
+            task_id = hashlib.md5(
+                f"{time.time()}{unified_msg_origin}".encode()
+            ).hexdigest()[:8]
+
         capabilities = self.generator.adapter.get_capabilities()
 
         # 检查并清理不支持的参数
+        task_log = log_prefix("Task", task_id)
         if not (capabilities & ImageCapability.IMAGE_TO_IMAGE) and images_data:
             logger.warning(
-                f"[ImageGen] 当前适配器不支持参考图，已忽略 {len(images_data)} 张图片"
+                f"{task_log} 当前适配器不支持参考图，已忽略 {len(images_data)} 张图片"
             )
             images_data = None
 
         if not (capabilities & ImageCapability.ASPECT_RATIO) and aspect_ratio != "自动":
             logger.info(
-                f"[ImageGen] 当前适配器不支持指定比例，已忽略参数: {aspect_ratio}"
+                f"{task_log} 当前适配器不支持指定比例，已忽略参数: {safe_log_text(aspect_ratio)}"
             )
             aspect_ratio = "自动"
 
         if not (capabilities & ImageCapability.RESOLUTION) and resolution != "1K":
             logger.info(
-                f"[ImageGen] 当前适配器不支持指定分辨率，已忽略参数: {resolution}"
+                f"{task_log} 当前适配器不支持指定分辨率，已忽略参数: {safe_log_text(resolution)}"
             )
             resolution = "1K"
-
-        if not task_id:
-            task_id = hashlib.md5(
-                f"{time.time()}{unified_msg_origin}".encode()
-            ).hexdigest()[:8]
 
         final_ar = validate_aspect_ratio(aspect_ratio) or None
         if final_ar == "自动":
@@ -330,8 +335,9 @@ class ImageGenerationPlugin(Star):
     ) -> None:
         """执行生成逻辑并发送结果。"""
         start_time = time.time()
+        task_log = log_prefix("Task", task_id)
         if not self.generator:
-            logger.warning("[ImageGen] 生成器未初始化，跳过生成请求")
+            logger.warning(f"{task_log} 生成器未初始化，跳过生成请求")
             return
         result = await self.generator.generate(
             GenerationRequest(
@@ -347,7 +353,7 @@ class ImageGenerationPlugin(Star):
 
         if result.error:
             logger.error(
-                f"[ImageGen] 任务 {task_id} 生成失败，耗时: {duration:.2f}s, 错误: {result.error}"
+                f"{task_log} 生成失败，耗时: {duration:.2f}s, 错误: {safe_log_text(result.error, 200)}"
             )
             await self.context.send_message(
                 unified_msg_origin,
@@ -356,7 +362,7 @@ class ImageGenerationPlugin(Star):
             return
 
         logger.info(
-            f"[ImageGen] 任务 {task_id} 生成成功，耗时: {duration:.2f}s, 图片数量: {len(result.images) if result.images else 0}"
+            f"{task_log} 生成成功，耗时: {duration:.2f}s, 图片数量: {len(result.images) if result.images else 0}"
         )
 
         if not result.images:
@@ -369,7 +375,7 @@ class ImageGenerationPlugin(Star):
                 generated_file_paths.append(file_path)
 
         if not generated_file_paths:
-            logger.warning(f"[ImageGen] 任务 {task_id} 未能保存任何生成图片")
+            logger.warning(f"{task_log} 未能保存任何生成图片")
             return
 
         # 生图后图片审核
@@ -379,7 +385,9 @@ class ImageGenerationPlugin(Star):
             unified_msg_origin=unified_msg_origin,
         )
         if not image_allowed:
-            logger.warning(f"[ImageGen] 任务 {task_id} 图片审核未通过: {image_reason}")
+            logger.warning(
+                f"{task_log} 图片审核未通过: {safe_log_text(image_reason, 200)}"
+            )
             await self.context.send_message(
                 unified_msg_origin,
                 MessageChain().message(f"❌ 图片内容审核未通过: {image_reason}"),
@@ -432,7 +440,9 @@ class ImageGenerationPlugin(Star):
         masked_uid = mask_sensitive(user_id)
 
         user_input = (event.message_str or "").strip()
-        logger.info(f"[ImageGen] 收到生图指令 - 用户: {masked_uid}, 输入: {user_input}")
+        logger.info(
+            f"{LOG} 收到生图指令 - 用户: {masked_uid}, 输入摘要: {safe_log_text(user_input)}"
+        )
 
         cmd_parts = user_input.split(maxsplit=1)
         if not cmd_parts:
@@ -464,7 +474,7 @@ class ImageGenerationPlugin(Star):
                     extra_content = rest
 
         if matched_preset:
-            logger.info(f"[ImageGen] 命中预设: {matched_preset}")
+            logger.info(f"{LOG} 命中预设: {safe_log_text(matched_preset)}")
             preset_content = self.config_manager.presets[matched_preset]
             try:
                 # 预设支持 JSON 格式配置高级参数
@@ -487,7 +497,7 @@ class ImageGenerationPlugin(Star):
                 prompt = f"{prompt} {extra_content}"
 
         if matched_persona:
-            logger.info(f"[ImageGen] 命中人设: {matched_persona}")
+            logger.info(f"{LOG} 命中人设: {safe_log_text(matched_persona)}")
             persona = self.config_manager.personas[matched_persona]
             prompt = persona.prompt
             persona_image = persona.image
@@ -504,6 +514,9 @@ class ImageGenerationPlugin(Star):
         if not prompt_allowed:
             yield event.plain_result(f"❌ 提示词审核未通过: {prompt_reason}")
             return
+
+        task_id = hashlib.md5(f"{time.time()}{user_id}".encode()).hexdigest()[:8]
+        task_log = log_prefix("Task", task_id)
 
         # 获取参考图
         images_data = None
@@ -522,12 +535,12 @@ class ImageGenerationPlugin(Star):
                 ):
                     images_data.append(persona_image_data)
                 else:
-                    logger.warning(f"[ImageGen] 人设参考图获取失败: {matched_persona}")
+                    logger.warning(
+                        f"{task_log} 人设参考图获取失败: {safe_log_text(matched_persona)}"
+                    )
             images_data.extend(
                 await self.image_processor.fetch_images_from_event(event)
             )
-
-        task_id = hashlib.md5(f"{time.time()}{user_id}".encode()).hexdigest()[:8]
 
         msg = self.format_start_task_message(
             prompt=prompt,
@@ -598,7 +611,7 @@ class ImageGenerationPlugin(Star):
         masked_uid = mask_sensitive(user_id)
         message_str = (event.message_str or "").strip()
         logger.info(
-            f"[ImageGen] 收到预设指令 - 用户: {masked_uid}, 内容: {message_str}"
+            f"{LOG} 收到预设指令 - 用户: {masked_uid}, 内容摘要: {safe_log_text(message_str)}"
         )
 
         parts = message_str.split(maxsplit=1)

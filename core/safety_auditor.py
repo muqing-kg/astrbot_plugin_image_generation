@@ -9,6 +9,10 @@ from astrbot.api import logger
 from astrbot.api.star import Context
 
 from .config_manager import ConfigManager
+from .logging_utils import log_prefix, safe_log_text
+
+
+LOG = log_prefix("SafetyAudit")
 
 
 class SafetyAuditor:
@@ -116,7 +120,7 @@ class SafetyAuditor:
             provider = self._context.get_provider_by_id(provider_id)
             if not provider:
                 logger.warning(
-                    f"[ImageGen] 未找到审核 Provider ID: {provider_id}，将回退到当前会话模型"
+                    f"{LOG} 未找到审核 Provider ID: {safe_log_text(provider_id)}，将回退到当前会话模型"
                 )
 
         if provider is None:
@@ -124,7 +128,7 @@ class SafetyAuditor:
 
         if not provider:
             msg = "安全审核异常：未找到可用审核模型"
-            logger.warning(f"[ImageGen] {msg}")
+            logger.warning(f"{LOG} {msg}")
             return False, msg
 
         try:
@@ -138,7 +142,7 @@ class SafetyAuditor:
             return decision, reason
         except Exception as exc:
             msg = f"安全审核异常：模型调用失败 - {str(exc)[:180]}"
-            logger.warning(f"[ImageGen] {msg}")
+            logger.warning(f"{LOG} {msg}", exc_info=True)
             return False, msg
 
     def _match_blocked_word(self, prompt: str, blocked_words: list[str]) -> str:

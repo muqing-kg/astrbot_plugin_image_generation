@@ -7,6 +7,7 @@ from typing import Any
 from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter
+from ..core.logging_utils import safe_log_error_body
 from ..core.types import GenerationRequest, ImageCapability
 
 
@@ -57,7 +58,7 @@ class GrokAdapter(BaseImageAdapter):
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {error_text}"
+                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                     )
                     return None, f"API 错误 ({resp.status})"
 

@@ -9,6 +9,7 @@ from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter
 from ..core.constants import GEMINI_DEFAULT_BASE_URL, GEMINI_SAFETY_CATEGORIES
+from ..core.logging_utils import safe_log_error_body, safe_log_url
 from ..core.types import GenerationRequest, ImageCapability
 
 
@@ -92,7 +93,7 @@ class GeminiAdapter(BaseImageAdapter):
         api_key = self._get_current_api_key()
         masked_key = self._get_masked_api_key()
         prefix = self._get_log_prefix(task_id)
-        logger.debug(f"{prefix} 请求 -> {url}, key={masked_key}")
+        logger.debug(f"{prefix} 请求 -> {safe_log_url(url)}, key={masked_key}")
 
         headers = {
             "Content-Type": "application/json",
@@ -113,13 +114,8 @@ class GeminiAdapter(BaseImageAdapter):
                 )
                 if response.status != 200:
                     error_text = await response.text()
-                    preview = (
-                        error_text[:200] + "..."
-                        if len(error_text) > 200
-                        else error_text
-                    )
                     logger.error(
-                        f"{prefix} 错误 {response.status} (耗时: {duration:.2f}s): {preview}"
+                        f"{prefix} 错误 {response.status} (耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                     )
                     return None
                 return await response.json()

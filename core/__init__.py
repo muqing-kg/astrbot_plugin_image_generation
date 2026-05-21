@@ -37,6 +37,14 @@ from .llm_tool import (
     PresetQueryTool,
     adjust_tool_parameters,
 )
+from .logging_utils import (
+    log_prefix,
+    mask_sensitive,
+    safe_log_error_body,
+    safe_log_mapping,
+    safe_log_text,
+    safe_log_url,
+)
 from .safety_auditor import SafetyAuditor
 from .task_manager import TaskManager
 from .types import (
@@ -53,7 +61,6 @@ from .utils import (
     convert_image_format,
     convert_images_batch,
     detect_mime_type,
-    mask_sensitive,
     validate_aspect_ratio,
     validate_resolution,
 )
@@ -92,7 +99,12 @@ __all__ = [
     "convert_image_format",
     "convert_images_batch",
     "detect_mime_type",
+    "log_prefix",
     "mask_sensitive",
+    "safe_log_error_body",
+    "safe_log_mapping",
+    "safe_log_text",
+    "safe_log_url",
     "validate_aspect_ratio",
     "validate_resolution",
     # 常量

@@ -8,6 +8,11 @@ from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter
 from ..core.constants import VOLCENGINE_ARK_DEFAULT_BASE_URL
+from ..core.logging_utils import (
+    safe_log_error_body,
+    safe_log_mapping,
+    safe_log_url,
+)
 from ..core.types import GenerationRequest, ImageCapability, ImageData
 
 
@@ -86,7 +91,9 @@ class VolcengineArkAdapter(BaseImageAdapter):
         }
         url = self._endpoint_url()
 
-        logger.debug(f"{prefix} 请求 URL: {url}, Payload 字段: {list(payload.keys())}")
+        logger.debug(
+            f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}"
+        )
 
         try:
             async with session.post(
@@ -100,7 +107,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {error_text}"
+                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                     )
                     return None, f"API 错误 ({resp.status})"
 
@@ -227,7 +234,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
 
         data_items = response.get("data")
         if not isinstance(data_items, list):
-            return None, f"响应中未找到 data 字段: {response}"
+            return None, f"响应中未找到 data 字段: {safe_log_mapping(response)}"
 
         images: list[bytes] = []
         errors: list[str] = []
@@ -280,7 +287,9 @@ class VolcengineArkAdapter(BaseImageAdapter):
             ) as resp:
                 if resp.status == 200:
                     return await resp.read()
-                logger.error(f"{prefix} 下载图像失败 ({resp.status}): {url}")
+                logger.error(
+                    f"{prefix} 下载图像失败 ({resp.status}): {safe_log_url(url)}"
+                )
         except Exception as exc:  # noqa: BLE001
             logger.error(f"{prefix} 下载图像异常: {exc}")
         return None

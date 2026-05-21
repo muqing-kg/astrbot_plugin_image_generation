@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -11,7 +12,17 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
 
-from .constants import DEFAULT_MAX_RETRY_ATTEMPTS, DEFAULT_TIMEOUT
+from .constants import (
+    DEFAULT_ASPECT_RATIO,
+    DEFAULT_DAILY_LIMIT_COUNT,
+    DEFAULT_MAX_CONCURRENT_TASKS,
+    DEFAULT_MAX_IMAGE_SIZE_MB,
+    DEFAULT_MAX_RETRY_ATTEMPTS,
+    DEFAULT_RATE_LIMIT_SECONDS,
+    DEFAULT_RESOLUTION,
+    DEFAULT_TIMEOUT,
+)
+from .logging_utils import log_prefix, safe_log_text
 from .types import AdapterConfig, AdapterType
 
 
@@ -29,105 +40,74 @@ PROVIDER_COMMON_FIELDS = frozenset(
     }
 )
 
+SCHEMA_DEFAULT_FACTORIES: dict[str, Any] = {
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "string": str,
+    "text": str,
+    "list": list,
+    "file": list,
+    "template_list": list,
+}
+
 ADAPTER_EXTRA_DEFAULTS: dict[AdapterType, dict[str, Any]] = {
     AdapterType.OPENAI: {"model_family": "auto"},
 }
+LOG = log_prefix("Config")
 
 
-class ConfigCompatibility:
-    """Helpers for normalizing legacy config formats.
+class ConfigMigrator:
+    """Migrate legacy config, then normalize it using schema metadata."""
 
-    Keep legacy mappings here so future config renames can be handled by adding
-    entries instead of scattering one-off compatibility code in parsers.
-    """
-
-    DEPRECATED_KEYS: dict[str, set[str]] = {
-        "api_providers.*": {"template"},
-        "api_providers.*[gitee_ai]": {
-            "max_reference_images",
-            "num_inference_steps",
-            "response_format",
-            "user",
-        },
-        "prompt_templates.personas.*": {
-            "template",
-            "name",
-            "prompt",
-            "image",
-            "reference_image",
-        },
-    }
-
-    VALUE_ALIASES: dict[str, dict[str, str]] = {
-        "api_providers.*.__template_key": {
-            "z_image_gitee": "gitee_ai",
-        },
-    }
-
-    KEY_ALIASES: dict[str, dict[str, str]] = {
-        "api_providers.*": {
-            "template": "__template_key",
-        },
-        "prompt_templates.personas.*": {
-            "template": "__template_key",
+    TEMPLATE_KEY_FIELD = "__template_key"
+    LEGACY_TEMPLATE_KEY_FIELD = "template"
+    TEMPLATE_KEY_ALIASES: dict[str, str] = {"z_image_gitee": "gitee_ai"}
+    FIELD_ALIASES: dict[str, dict[str, str]] = {
+        "prompt_templates.personas[]": {
             "name": "persona_name",
             "prompt": "persona_prompt",
             "image": "persona_image",
             "reference_image": "persona_image",
         },
     }
-
-    TEMPLATE_KEY_ALIASES: dict[str, str] = {
-        "z_image_gitee": "gitee_ai",
-    }
-
-    DEFAULTS: dict[str, dict[str, Any]] = {}
-
     LIST_ADDITIONS_ON_TEMPLATE_MIGRATION: dict[str, dict[str, list[Any]]] = {
-        "z_image_gitee": {
-            "capability_options": ["图生图"],
-        },
+        "z_image_gitee": {"capability_options": ["图生图"]},
     }
-
     _SENTINEL = object()
 
-    @classmethod
-    def normalize_value(cls, path: str, value: Any) -> Any:
-        """Normalize a scalar config value by compatibility path."""
-        if not isinstance(value, str):
-            return value
-        aliases = cls.VALUE_ALIASES.get(path, {})
-        normalized = value.strip()
-        return aliases.get(normalized, normalized)
+    def __init__(self, schema: Mapping[str, Any] | None):
+        self._schema = schema if isinstance(schema, Mapping) else {}
 
     @classmethod
-    def normalize_mapping(cls, path: str, value: Mapping[str, Any]) -> dict[str, Any]:
-        """Copy a mapping and fill renamed keys from legacy aliases."""
-        normalized = dict(value)
-        for legacy_key, current_key in cls.KEY_ALIASES.get(path, {}).items():
-            if legacy_key in normalized and current_key not in normalized:
-                normalized[current_key] = normalized[legacy_key]
-        return normalized
+    def normalize_template_key(cls, value: Any) -> str:
+        template_key = str(value or "").strip()
+        return cls.TEMPLATE_KEY_ALIASES.get(template_key, template_key)
 
-    @classmethod
-    def migrate_config(cls, config: dict[str, Any]) -> tuple[bool, list[str]]:
-        """Migrate known legacy config structures in-place.
-
-        Returns:
-            A tuple of (changed, messages) for save decisions and logging.
-        """
+    def migrate(self, config: dict[str, Any]) -> tuple[bool, list[str]]:
         changed = False
         messages: list[str] = []
 
-        changed |= cls._migrate_enable_llm_tool(config, messages)
-        changed |= cls._migrate_api_providers(config, messages)
-        changed |= cls._migrate_prompt_templates(config, messages)
+        changed |= self._migrate_enable_llm_tool(config, messages)
+        changed |= self._move_legacy_prompt_templates(config, messages)
 
+        if not self._schema:
+            return changed, messages
+
+        normalized, normalize_changed, normalize_messages = self._normalize_object(
+            config,
+            self._schema,
+            path="",
+        )
+        changed |= normalize_changed
+        messages.extend(normalize_messages)
+        if normalize_changed:
+            config.clear()
+            config.update(normalized)
         return changed, messages
 
-    @classmethod
     def _migrate_enable_llm_tool(
-        cls, config: dict[str, Any], messages: list[str]
+        self, config: dict[str, Any], messages: list[str]
     ) -> bool:
         value = config.get("enable_llm_tool")
         if not isinstance(value, bool):
@@ -137,150 +117,12 @@ class ConfigCompatibility:
         messages.append("enable_llm_tool: bool -> list")
         return True
 
-    @classmethod
-    def _migrate_api_providers(
-        cls, config: dict[str, Any], messages: list[str]
-    ) -> bool:
-        providers = config.get("api_providers")
-        if not isinstance(providers, list):
-            return False
-
-        changed = False
-        for index, provider in enumerate(providers):
-            if not isinstance(provider, dict):
-                continue
-
-            changed |= cls._apply_key_aliases(
-                provider,
-                "api_providers.*",
-                messages,
-                label=f"api_providers[{index}]",
-            )
-
-            template_key = provider.get("__template_key")
-            normalized_key = cls.TEMPLATE_KEY_ALIASES.get(str(template_key).strip())
-            if normalized_key:
-                provider["__template_key"] = normalized_key
-                changed = True
-                messages.append(
-                    f"api_providers[{index}].__template_key: {template_key!r} -> {normalized_key!r}"
-                )
-                changed |= cls._ensure_list_values(
-                    provider,
-                    cls.LIST_ADDITIONS_ON_TEMPLATE_MIGRATION.get(
-                        str(template_key).strip(), {}
-                    ),
-                    messages,
-                    label=f"api_providers[{index}]",
-                )
-                template_key = normalized_key
-
-            if isinstance(template_key, str):
-                changed |= cls._fill_defaults(
-                    provider,
-                    f"api_providers.*[{template_key}]",
-                    messages,
-                    label=f"api_providers[{index}]",
-                )
-                changed |= cls._remove_deprecated_keys(
-                    provider,
-                    f"api_providers.*[{template_key}]",
-                    messages,
-                    label=f"api_providers[{index}]",
-                )
-
-            changed |= cls._remove_deprecated_keys(
-                provider,
-                "api_providers.*",
-                messages,
-                label=f"api_providers[{index}]",
-            )
-
-        return changed
-
-    @classmethod
-    def _migrate_prompt_templates(
-        cls, config: dict[str, Any], messages: list[str]
-    ) -> bool:
-        prompt_templates = config.get("prompt_templates")
-        if prompt_templates is not None and not isinstance(prompt_templates, dict):
-            return False
-
-        changed = False
-        changed |= cls._move_legacy_prompt_templates(config, messages)
-        prompt_templates = config.get("prompt_templates")
-        if not isinstance(prompt_templates, dict):
-            return changed
-
-        personas = prompt_templates.get("personas")
-        if isinstance(personas, list):
-            for index, persona in enumerate(personas):
-                if not isinstance(persona, dict):
-                    continue
-                changed |= cls._ensure_template_key(
-                    persona,
-                    "persona",
-                    messages,
-                    label=f"prompt_templates.personas[{index}]",
-                )
-                changed |= cls._apply_key_aliases(
-                    persona,
-                    "prompt_templates.personas.*",
-                    messages,
-                    label=f"prompt_templates.personas[{index}]",
-                )
-                changed |= cls._remove_deprecated_keys(
-                    persona,
-                    "prompt_templates.personas.*",
-                    messages,
-                    label=f"prompt_templates.personas[{index}]",
-                )
-
-        return changed
-
-    @classmethod
-    def _ensure_template_key(
-        cls,
-        target: dict[str, Any],
-        template_key: str,
-        messages: list[str],
-        *,
-        label: str,
-    ) -> bool:
-        current_key = str(target.get("__template_key") or "").strip()
-        if current_key == template_key:
-            return False
-
-        target["__template_key"] = template_key
-        messages.append(f"{label}.__template_key: {current_key!r} -> {template_key!r}")
-        return True
-
-    @classmethod
-    def _apply_key_aliases(
-        cls,
-        target: dict[str, Any],
-        path: str,
-        messages: list[str],
-        *,
-        label: str,
-    ) -> bool:
-        changed = False
-        for legacy_key, current_key in cls.KEY_ALIASES.get(path, {}).items():
-            if legacy_key not in target:
-                continue
-            if current_key not in target:
-                target[current_key] = target[legacy_key]
-                changed = True
-                messages.append(f"{label}.{legacy_key} -> {current_key}")
-        return changed
-
-    @classmethod
     def _move_legacy_prompt_templates(
-        cls, config: dict[str, Any], messages: list[str]
+        self, config: dict[str, Any], messages: list[str]
     ) -> bool:
-        legacy_presets = cls._pop_if_present(config, "presets")
-        legacy_personas = cls._pop_if_present(config, "personas")
-        if legacy_presets is cls._SENTINEL and legacy_personas is cls._SENTINEL:
+        legacy_presets = self._pop_if_present(config, "presets")
+        legacy_personas = self._pop_if_present(config, "personas")
+        if legacy_presets is self._SENTINEL and legacy_personas is self._SENTINEL:
             return False
 
         prompt_templates = config.setdefault("prompt_templates", {})
@@ -288,36 +130,252 @@ class ConfigCompatibility:
             prompt_templates = {}
             config["prompt_templates"] = prompt_templates
 
-        if legacy_presets is not cls._SENTINEL and "presets" not in prompt_templates:
+        if legacy_presets is not self._SENTINEL and "presets" not in prompt_templates:
             prompt_templates["presets"] = legacy_presets
             messages.append("presets -> prompt_templates.presets")
 
-        if legacy_personas is not cls._SENTINEL and "personas" not in prompt_templates:
+        if legacy_personas is not self._SENTINEL and "personas" not in prompt_templates:
             prompt_templates["personas"] = legacy_personas
             messages.append("personas -> prompt_templates.personas")
 
         return True
 
-    @classmethod
-    def _fill_defaults(
-        cls,
-        target: dict[str, Any],
-        path: str,
-        messages: list[str],
+    def _normalize_object(
+        self,
+        raw: Any,
+        schema: Mapping[str, Any],
         *,
-        label: str,
-    ) -> bool:
+        path: str,
+    ) -> tuple[dict[str, Any], bool, list[str]]:
+        messages: list[str] = []
         changed = False
-        for key, default in cls.DEFAULTS.get(path, {}).items():
-            if key not in target:
-                target[key] = default
-                changed = True
-                messages.append(f"{label}.{key}: add default")
-        return changed
 
-    @classmethod
+        if isinstance(raw, Mapping):
+            raw_mapping, alias_changed, alias_messages = self._apply_field_aliases(
+                raw, path=path
+            )
+            changed |= alias_changed
+            messages.extend(alias_messages)
+        else:
+            raw_mapping = {}
+            changed = True
+            messages.append(f"{path or '<root>'}: reset to object")
+
+        normalized: dict[str, Any] = {}
+        for key, meta in schema.items():
+            key_path = self._join_path(path, key)
+            if key in raw_mapping and raw_mapping[key] is not None:
+                value, value_changed, value_messages = self._normalize_value(
+                    raw_mapping[key],
+                    meta,
+                    path=key_path,
+                )
+                normalized[key] = value
+                changed |= value_changed
+                messages.extend(value_messages)
+            else:
+                normalized[key] = self._schema_default(meta)
+                changed = True
+                messages.append(f"{key_path}: add default")
+
+        for key in raw_mapping:
+            if key not in schema:
+                changed = True
+                messages.append(
+                    f"{self._join_path(path, str(key))}: removed obsolete key"
+                )
+
+        if list(raw_mapping.keys()) != list(normalized.keys()):
+            changed = True
+            if set(raw_mapping.keys()) == set(normalized.keys()):
+                messages.append(f"{path or '<root>'}: fixed key order")
+
+        return normalized, changed, messages
+
+    def _normalize_value(
+        self,
+        raw: Any,
+        meta: Any,
+        *,
+        path: str,
+    ) -> tuple[Any, bool, list[str]]:
+        if not isinstance(meta, Mapping):
+            return copy.deepcopy(raw), False, []
+
+        meta_type = meta.get("type")
+        if meta_type == "object":
+            items = meta.get("items")
+            if not isinstance(items, Mapping):
+                return (
+                    self._schema_default(meta),
+                    raw is not None,
+                    [f"{path}: reset to object"],
+                )
+            return self._normalize_object(raw, items, path=path)
+
+        if meta_type == "template_list":
+            return self._normalize_template_list(raw, meta, path=path)
+
+        return self._normalize_leaf_value(raw, meta, path=path)
+
+    def _normalize_template_list(
+        self,
+        raw: Any,
+        meta: Mapping[str, Any],
+        *,
+        path: str,
+    ) -> tuple[list[Any], bool, list[str]]:
+        if not isinstance(raw, list):
+            return self._schema_default(meta), True, [f"{path}: reset to list"]
+
+        templates = meta.get("templates")
+        if not isinstance(templates, Mapping):
+            templates = {}
+
+        normalized_items: list[Any] = []
+        changed = False
+        messages: list[str] = []
+
+        for index, item in enumerate(raw):
+            item_path = f"{path}[{index}]"
+            if not isinstance(item, Mapping):
+                changed = True
+                messages.append(f"{item_path}: removed non-object item")
+                continue
+
+            template_key, old_template_key, key_changed, key_messages = (
+                self._normalize_template_key(
+                    item,
+                    templates,
+                    item_path=item_path,
+                )
+            )
+            changed |= key_changed
+            messages.extend(key_messages)
+            if not template_key:
+                changed = True
+                messages.append(f"{item_path}: removed item without template")
+                continue
+
+            template_meta = templates.get(template_key)
+            if not isinstance(template_meta, Mapping):
+                changed = True
+                messages.append(
+                    f"{item_path}: removed unknown template {template_key!r}"
+                )
+                continue
+
+            item_schema = template_meta.get("items")
+            if not isinstance(item_schema, Mapping):
+                item_schema = {}
+
+            child_raw = {
+                key: value
+                for key, value in item.items()
+                if key
+                not in {
+                    self.TEMPLATE_KEY_FIELD,
+                    self.LEGACY_TEMPLATE_KEY_FIELD,
+                }
+            }
+            changed |= self._ensure_list_values(
+                child_raw,
+                self.LIST_ADDITIONS_ON_TEMPLATE_MIGRATION.get(old_template_key, {}),
+                messages,
+                label=item_path,
+            )
+            child_normalized, child_changed, child_messages = self._normalize_object(
+                child_raw,
+                item_schema,
+                path=item_path,
+            )
+            normalized_item = {self.TEMPLATE_KEY_FIELD: template_key}
+            normalized_item.update(child_normalized)
+
+            if dict(item) != normalized_item:
+                changed = True
+            changed |= child_changed
+            messages.extend(child_messages)
+            normalized_items.append(normalized_item)
+
+        if len(normalized_items) != len(raw):
+            changed = True
+
+        return normalized_items, changed, messages
+
+    def _normalize_template_key(
+        self,
+        item: Mapping[str, Any],
+        templates: Mapping[str, Any],
+        *,
+        item_path: str,
+    ) -> tuple[str, str, bool, list[str]]:
+        messages: list[str] = []
+        changed = False
+
+        raw_key = item.get(self.TEMPLATE_KEY_FIELD)
+        legacy_key = item.get(self.LEGACY_TEMPLATE_KEY_FIELD)
+        if legacy_key not in (None, ""):
+            changed = True
+            messages.append(
+                f"{item_path}.{self.LEGACY_TEMPLATE_KEY_FIELD}: removed legacy key"
+            )
+            if raw_key in (None, ""):
+                raw_key = legacy_key
+                messages.append(
+                    f"{item_path}.{self.LEGACY_TEMPLATE_KEY_FIELD} -> {self.TEMPLATE_KEY_FIELD}"
+                )
+
+        old_template_key = str(raw_key).strip() if raw_key not in (None, "") else ""
+        template_key = self.normalize_template_key(old_template_key)
+        if template_key != old_template_key:
+            messages.append(
+                f"{item_path}.{self.TEMPLATE_KEY_FIELD}: {old_template_key!r} -> {template_key!r}"
+            )
+            changed = True
+
+        if not template_key and len(templates) == 1:
+            template_key = next(iter(templates))
+            messages.append(
+                f"{item_path}.{self.TEMPLATE_KEY_FIELD}: add default {template_key!r}"
+            )
+            changed = True
+
+        if item.get(self.TEMPLATE_KEY_FIELD) != template_key:
+            changed = True
+
+        return template_key, old_template_key, changed, messages
+
+    def _apply_field_aliases(
+        self,
+        raw: Mapping[str, Any],
+        *,
+        path: str,
+    ) -> tuple[dict[str, Any], bool, list[str]]:
+        aliases = self._field_aliases_for_path(path)
+        if not aliases:
+            return dict(raw), False, []
+
+        changed = False
+        messages: list[str] = []
+        normalized = dict(raw)
+        for legacy_key, current_key in aliases.items():
+            if legacy_key not in normalized:
+                continue
+            if current_key not in normalized:
+                normalized[current_key] = normalized[legacy_key]
+                messages.append(f"{path}.{legacy_key} -> {current_key}")
+            normalized.pop(legacy_key, None)
+            changed = True
+        return normalized, changed, messages
+
+    def _field_aliases_for_path(self, path: str) -> dict[str, str]:
+        if path.startswith("prompt_templates.personas["):
+            return self.FIELD_ALIASES["prompt_templates.personas[]"]
+        return {}
+
     def _ensure_list_values(
-        cls,
+        self,
         target: dict[str, Any],
         additions: dict[str, list[Any]],
         messages: list[str],
@@ -336,27 +394,109 @@ class ConfigCompatibility:
                     messages.append(f"{label}.{key}: add {value!r}")
         return changed
 
-    @classmethod
-    def _remove_deprecated_keys(
-        cls,
-        target: dict[str, Any],
-        path: str,
-        messages: list[str],
+    def _normalize_leaf_value(
+        self,
+        raw: Any,
+        meta: Mapping[str, Any],
         *,
-        label: str,
-    ) -> bool:
-        changed = False
-        for key in cls.DEPRECATED_KEYS.get(path, set()):
-            if key in target:
-                target.pop(key, None)
-                changed = True
-                messages.append(f"{label}.{key}: removed deprecated key")
-        return changed
+        path: str,
+    ) -> tuple[Any, bool, list[str]]:
+        meta_type = str(meta.get("type") or "")
+        default = self._schema_default(meta)
+        value = self._coerce_schema_value(raw, meta_type, default)
+        changed = value != raw
 
-    @classmethod
-    def _pop_if_present(cls, target: dict[str, Any], key: str) -> Any:
+        value, options_changed = self._normalize_options(value, meta)
+        changed |= options_changed
+        return value, changed, [f"{path}: normalized by schema"] if changed else []
+
+    def _coerce_schema_value(self, raw: Any, meta_type: str, default: Any) -> Any:
+        """Coerce a scalar schema value without applying option filters."""
+        if meta_type == "int":
+            return self._coerce_number(raw, default, int)
+        if meta_type == "float":
+            return self._coerce_number(raw, default, float)
+        if meta_type == "bool":
+            return self._coerce_bool(raw, default)
+        if meta_type in {"string", "text"}:
+            return raw if isinstance(raw, str) else default if raw is None else str(raw)
+        if meta_type == "file":
+            return self._coerce_file_value(raw, default)
+        if meta_type == "list":
+            return copy.deepcopy(raw) if isinstance(raw, list) else default
+        return copy.deepcopy(raw)
+
+    def _coerce_number(self, raw: Any, default: Any, parser: Any) -> Any:
+        """Coerce int or float config values."""
+        if isinstance(raw, bool):
+            return default
+        try:
+            return parser(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def _coerce_bool(self, raw: Any, default: bool) -> bool:
+        """Coerce bool config values with explicit string support."""
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off", ""}:
+                return False
+        return default
+
+    def _coerce_file_value(self, raw: Any, default: Any) -> list[Any]:
+        """Coerce file config values to AstrBot file-list shape."""
+        if isinstance(raw, list):
+            return copy.deepcopy(raw)
+        if isinstance(raw, str) and raw.strip():
+            return [raw.strip()]
+        return default
+
+    def _normalize_options(
+        self,
+        value: Any,
+        meta: Mapping[str, Any],
+    ) -> tuple[Any, bool]:
+        options = meta.get("options")
+        if not isinstance(options, list):
+            return value, False
+
+        option_set = set(options)
+        if isinstance(value, list):
+            normalized = [item for item in value if item in option_set]
+            return normalized, normalized != value
+
+        if value in option_set:
+            return value, False
+
+        return self._schema_default(meta), True
+
+    def _schema_default(self, meta: Any) -> Any:
+        if not isinstance(meta, Mapping):
+            return None
+
+        meta_type = str(meta.get("type") or "")
+        if meta_type == "object":
+            items = meta.get("items")
+            if not isinstance(items, Mapping):
+                return {}
+            return {key: self._schema_default(value) for key, value in items.items()}
+
+        if "default" in meta:
+            return copy.deepcopy(meta["default"])
+
+        default_factory = SCHEMA_DEFAULT_FACTORIES.get(meta_type)
+        return default_factory() if default_factory else None
+
+    def _join_path(self, base: str, key: str) -> str:
+        return f"{base}.{key}" if base else key
+
+    def _pop_if_present(self, target: dict[str, Any], key: str) -> Any:
         if key not in target:
-            return cls._SENTINEL
+            return self._SENTINEL
         return target.pop(key)
 
 
@@ -374,10 +514,10 @@ ALL_LLM_TOOLS = (
 class UsageSettings:
     """用户使用限制设置。"""
 
-    rate_limit_seconds: int = 0
+    rate_limit_seconds: int = DEFAULT_RATE_LIMIT_SECONDS
     enable_daily_limit: bool = False
-    daily_limit_count: int = 10
-    max_image_size_mb: int = 10
+    daily_limit_count: int = DEFAULT_DAILY_LIMIT_COUNT
+    max_image_size_mb: int = DEFAULT_MAX_IMAGE_SIZE_MB
     umo_blacklist: list[str] = field(default_factory=list)
     blacklist_block_message: str = "❌ 当前会话已被加入黑名单，无法使用生图功能"
 
@@ -386,9 +526,9 @@ class UsageSettings:
 class GenerationSettings:
     """生成设置。"""
 
-    default_aspect_ratio: str = "自动"
-    default_resolution: str = "1K"
-    max_concurrent_tasks: int = 3
+    default_aspect_ratio: str = DEFAULT_ASPECT_RATIO
+    default_resolution: str = DEFAULT_RESOLUTION
+    max_concurrent_tasks: int = DEFAULT_MAX_CONCURRENT_TASKS
     show_generation_info: bool = False
     show_model_info: bool = False
     start_task_message_template: str = (
@@ -458,8 +598,11 @@ class PluginConfig:
 class ConfigManager:
     """插件配置管理器。"""
 
+    MIGRATION_LOG_LIMIT = 20
+
     def __init__(self, config: AstrBotConfig):
         self._config = config
+        self._config_migrator = ConfigMigrator(getattr(config, "schema", None))
         self._plugin_config: PluginConfig = PluginConfig()
         self._all_provider_configs: list[AdapterConfig] = []  # 保存所有供应商配置
         self.load()
@@ -474,134 +617,192 @@ class ConfigManager:
         prompt_templates_cfg = self._get_config_section("prompt_templates")
         api_providers_raw = self._config.get("api_providers", [])
 
-        self._plugin_config.enabled_llm_tools = set(
-            self._parse_enabled_llm_tools(
-                self._config.get("enable_llm_tool", list(ALL_LLM_TOOLS))
-            )
-        )
-
         all_provider_configs = self._load_provider_configs(api_providers_raw, gen_cfg)
-
-        # 保存所有供应商配置供后续使用
         self._all_provider_configs = all_provider_configs
 
-        # 2. 获取当前选择的模型
-        model_setting = gen_cfg.get("model", "")
-        self._plugin_config.adapter_config = self._select_adapter_config(
-            all_provider_configs,
-            str(model_setting or ""),
-        )
-
-        # 用户限制设置
-        umo_blacklist_raw = user_limits_cfg.get("umo_blacklist", [])
-        umo_blacklist: list[str] = []
-        if isinstance(umo_blacklist_raw, list):
-            umo_blacklist = [
-                str(umo).strip() for umo in umo_blacklist_raw if str(umo).strip()
-            ]
-        blacklist_block_message = str(
-            user_limits_cfg.get(
-                "blacklist_block_message", UsageSettings.blacklist_block_message
-            )
-        ).strip()
-
-        self._plugin_config.usage_settings = UsageSettings(
-            rate_limit_seconds=max(0, user_limits_cfg.get("rate_limit_seconds", 0)),
-            max_image_size_mb=max(1, user_limits_cfg.get("max_image_size_mb", 10)),
-            enable_daily_limit=user_limits_cfg.get("enable_daily_limit", False),
-            daily_limit_count=max(1, user_limits_cfg.get("daily_limit_count", 10)),
-            umo_blacklist=umo_blacklist,
-            blacklist_block_message=blacklist_block_message,
-        )
-
-        # 生成设置
-        self._plugin_config.generation_settings = GenerationSettings(
-            default_aspect_ratio=gen_cfg.get("default_aspect_ratio", "自动"),
-            default_resolution=gen_cfg.get("default_resolution", "1K"),
-            max_concurrent_tasks=max(1, gen_cfg.get("max_concurrent_tasks", 3)),
-            show_generation_info=gen_cfg.get("show_generation_info", False),
-            show_model_info=gen_cfg.get("show_model_info", False),
-            start_task_message_template=str(
-                gen_cfg.get(
-                    "start_task_message_template",
-                    GenerationSettings.start_task_message_template,
+        self._plugin_config = PluginConfig(
+            adapter_config=self._select_adapter_config(
+                all_provider_configs,
+                self._get_str(gen_cfg, "model", ""),
+            ),
+            usage_settings=self._parse_usage_settings(user_limits_cfg),
+            generation_settings=self._parse_generation_settings(gen_cfg),
+            safety_audit_settings=self._parse_safety_audit_settings(safety_cfg),
+            presets=self._load_presets(prompt_templates_cfg.get("presets", [])),
+            personas=self._load_personas(prompt_templates_cfg.get("personas", [])),
+            enabled_llm_tools=set(
+                self._parse_enabled_llm_tools(
+                    self._config.get("enable_llm_tool", list(ALL_LLM_TOOLS))
                 )
             ),
         )
 
-        # 安全审核设置
-        prompt_audit_cfg = safety_cfg.get("prompt_audit", {})
-        image_audit_cfg = safety_cfg.get("image_audit", {})
-        umo_whitelist_raw = safety_cfg.get("umo_whitelist", [])
-
-        blocked_words_raw = prompt_audit_cfg.get("blocked_words", [])
-        blocked_words: list[str] = []
-        if isinstance(blocked_words_raw, list):
-            blocked_words = [
-                str(word).strip() for word in blocked_words_raw if str(word).strip()
-            ]
-
-        umo_whitelist: list[str] = []
-        if isinstance(umo_whitelist_raw, list):
-            umo_whitelist = [
-                str(umo).strip() for umo in umo_whitelist_raw if str(umo).strip()
-            ]
-
-        self._plugin_config.safety_audit_settings = SafetyAuditSettings(
-            umo_whitelist=umo_whitelist,
-            prompt_audit=PromptAuditSettings(
-                blocked_words=blocked_words,
-                enable_ai_audit=bool(prompt_audit_cfg.get("enable_ai_audit", False)),
-                ai_provider_id=str(prompt_audit_cfg.get("ai_provider_id", "")).strip(),
-                ai_prompt=str(
-                    prompt_audit_cfg.get(
-                        "ai_prompt",
-                        PromptAuditSettings.ai_prompt,
-                    )
-                ).strip(),
-            ),
-            image_audit=ImageAuditSettings(
-                enable_ai_audit=bool(image_audit_cfg.get("enable_ai_audit", False)),
-                ai_provider_id=str(image_audit_cfg.get("ai_provider_id", "")).strip(),
-                ai_prompt=str(
-                    image_audit_cfg.get(
-                        "ai_prompt",
-                        ImageAuditSettings.ai_prompt,
-                    )
-                ).strip(),
-            ),
-        )
-
-        # 预设
-        self._plugin_config.presets = self._load_presets(
-            prompt_templates_cfg.get("presets", [])
-        )
-        self._plugin_config.personas = self._load_personas(
-            prompt_templates_cfg.get("personas", [])
-        )
-
         return self._plugin_config
+
+    def _parse_usage_settings(self, cfg: dict[str, Any]) -> UsageSettings:
+        """Parse user limit settings from normalized config."""
+        return UsageSettings(
+            rate_limit_seconds=self._get_int(
+                cfg,
+                "rate_limit_seconds",
+                DEFAULT_RATE_LIMIT_SECONDS,
+                min_value=0,
+            ),
+            enable_daily_limit=self._get_bool(cfg, "enable_daily_limit", False),
+            daily_limit_count=self._get_int(
+                cfg,
+                "daily_limit_count",
+                DEFAULT_DAILY_LIMIT_COUNT,
+                min_value=1,
+            ),
+            max_image_size_mb=self._get_int(
+                cfg,
+                "max_image_size_mb",
+                DEFAULT_MAX_IMAGE_SIZE_MB,
+                min_value=1,
+            ),
+            umo_blacklist=self._parse_string_list(cfg.get("umo_blacklist", [])),
+            blacklist_block_message=self._get_str(
+                cfg,
+                "blacklist_block_message",
+                UsageSettings.blacklist_block_message,
+            ),
+        )
+
+    def _parse_generation_settings(self, cfg: dict[str, Any]) -> GenerationSettings:
+        """Parse image generation behavior settings."""
+        return GenerationSettings(
+            default_aspect_ratio=self._get_str(
+                cfg,
+                "default_aspect_ratio",
+                DEFAULT_ASPECT_RATIO,
+            ),
+            default_resolution=self._get_str(
+                cfg,
+                "default_resolution",
+                DEFAULT_RESOLUTION,
+            ),
+            max_concurrent_tasks=self._get_int(
+                cfg,
+                "max_concurrent_tasks",
+                DEFAULT_MAX_CONCURRENT_TASKS,
+                min_value=1,
+            ),
+            show_generation_info=self._get_bool(cfg, "show_generation_info", False),
+            show_model_info=self._get_bool(cfg, "show_model_info", False),
+            start_task_message_template=self._get_str(
+                cfg,
+                "start_task_message_template",
+                GenerationSettings.start_task_message_template,
+            ),
+        )
+
+    def _parse_safety_audit_settings(self, cfg: dict[str, Any]) -> SafetyAuditSettings:
+        """Parse prompt and image audit settings."""
+        prompt_audit_cfg = self._get_nested_section(cfg, "prompt_audit")
+        image_audit_cfg = self._get_nested_section(cfg, "image_audit")
+
+        return SafetyAuditSettings(
+            umo_whitelist=self._parse_string_list(cfg.get("umo_whitelist", [])),
+            prompt_audit=self._parse_prompt_audit_settings(prompt_audit_cfg),
+            image_audit=self._parse_image_audit_settings(image_audit_cfg),
+        )
+
+    def _parse_prompt_audit_settings(self, cfg: dict[str, Any]) -> PromptAuditSettings:
+        """Parse prompt audit settings."""
+        return PromptAuditSettings(
+            blocked_words=self._parse_string_list(cfg.get("blocked_words", [])),
+            enable_ai_audit=self._get_bool(cfg, "enable_ai_audit", False),
+            ai_provider_id=self._get_str(cfg, "ai_provider_id", ""),
+            ai_prompt=self._get_str(cfg, "ai_prompt", PromptAuditSettings.ai_prompt),
+        )
+
+    def _parse_image_audit_settings(self, cfg: dict[str, Any]) -> ImageAuditSettings:
+        """Parse image audit settings."""
+        return ImageAuditSettings(
+            enable_ai_audit=self._get_bool(cfg, "enable_ai_audit", False),
+            ai_provider_id=self._get_str(cfg, "ai_provider_id", ""),
+            ai_prompt=self._get_str(cfg, "ai_prompt", ImageAuditSettings.ai_prompt),
+        )
 
     def reload(self) -> PluginConfig:
         """重新加载配置。"""
         return self.load()
 
     def _migrate_legacy_config(self) -> None:
-        """Migrate and persist known legacy config formats before parsing."""
-        changed, messages = ConfigCompatibility.migrate_config(self._config)
+        """Migrate legacy config and persist schema-normalized config."""
+        changed, messages = self._config_migrator.migrate(self._config)
         if not changed:
             return
 
-        logger.info("[ImageGen] 已自动迁移旧配置: " + "; ".join(messages))
+        logger.info(
+            f"{LOG} 已自动迁移并规范化配置: "
+            + self._format_migration_messages(messages)
+        )
         self._config.save_config()
+
+    def _format_migration_messages(self, messages: list[str]) -> str:
+        """Format migration messages without flooding logs."""
+        if len(messages) <= self.MIGRATION_LOG_LIMIT:
+            return "; ".join(messages)
+        visible_messages = messages[: self.MIGRATION_LOG_LIMIT]
+        hidden_count = len(messages) - self.MIGRATION_LOG_LIMIT
+        return "; ".join(visible_messages) + f"; ... and {hidden_count} more"
 
     def _get_config_section(self, name: str) -> dict[str, Any]:
         """Return a dictionary config section, falling back to an empty dict."""
         value = self._config.get(name, {})
         if isinstance(value, dict):
             return value
-        logger.warning(f"[ImageGen] 配置项 {name} 格式错误，已按空对象处理")
+        logger.warning(f"{LOG} 配置项 {safe_log_text(name)} 格式错误，已按空对象处理")
         return {}
+
+    def _get_nested_section(self, cfg: dict[str, Any], key: str) -> dict[str, Any]:
+        """Return a nested dictionary section, falling back to an empty dict."""
+        value = cfg.get(key, {})
+        if isinstance(value, dict):
+            return value
+        logger.warning(f"{LOG} 配置项 {key} 格式错误，已按空对象处理")
+        return {}
+
+    def _get_str(
+        self,
+        cfg: dict[str, Any],
+        key: str,
+        default: str,
+        *,
+        strip: bool = True,
+    ) -> str:
+        """Read a config value as string."""
+        value = cfg.get(key, default)
+        if value is None:
+            value = default
+        parsed = str(value)
+        return parsed.strip() if strip else parsed
+
+    def _get_bool(self, cfg: dict[str, Any], key: str, default: bool) -> bool:
+        """Read a config value as bool without treating arbitrary strings as true."""
+        value = cfg.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off", ""}:
+                return False
+        return default
+
+    def _get_int(
+        self,
+        cfg: dict[str, Any],
+        key: str,
+        default: int,
+        *,
+        min_value: int,
+    ) -> int:
+        """Read a config value as int and clamp it."""
+        return self._coerce_int(cfg.get(key, default), default, min_value=min_value)
 
     def _parse_enabled_llm_tools(self, raw: Any) -> list[str]:
         """Parse enabled LLM tool names from list config."""
@@ -609,7 +810,7 @@ class ConfigManager:
             return list(ALL_LLM_TOOLS) if raw else []
 
         if not isinstance(raw, list):
-            logger.warning("[ImageGen] enable_llm_tool 配置格式错误，已按空列表处理")
+            logger.warning(f"{LOG} enable_llm_tool 配置格式错误，已按空列表处理")
             return []
 
         selected: list[str] = []
@@ -624,15 +825,14 @@ class ConfigManager:
     ) -> list[AdapterConfig]:
         """Parse all provider templates into normalized adapter configs."""
         if not isinstance(raw_providers, list):
-            logger.warning("[ImageGen] api_providers 配置格式错误，已按空列表处理")
+            logger.warning(f"{LOG} api_providers 配置格式错误，已按空列表处理")
             return []
 
         provider_configs: list[AdapterConfig] = []
         for provider_item in raw_providers:
             if not isinstance(provider_item, dict):
                 continue
-            normalized_item = self._compat_mapping("api_providers.*", provider_item)
-            if parsed := self._parse_provider_config(normalized_item, gen_cfg):
+            if parsed := self._parse_provider_config(provider_item, gen_cfg):
                 provider_configs.append(parsed)
         return provider_configs
 
@@ -678,29 +878,22 @@ class ConfigManager:
 
     def _parse_adapter_type(self, provider_item: dict[str, Any]) -> AdapterType | None:
         """Parse and validate the provider template key."""
-        adapter_type_str = self._compat_value(
-            "api_providers.*.__template_key",
-            provider_item.get("__template_key") or "",
-        )
+        raw_key = provider_item.get("__template_key") or ""
+        adapter_type_str = ConfigMigrator.normalize_template_key(raw_key)
+        if adapter_type_str != str(raw_key).strip():
+            logger.info(
+                f"{LOG} 兼容旧配置: api_providers.*.__template_key {raw_key!r} -> {adapter_type_str!r}"
+            )
         if not adapter_type_str:
             return None
 
         try:
             return AdapterType(adapter_type_str)
         except ValueError:
-            logger.warning(f"[ImageGen] 忽略未知适配器类型: {adapter_type_str}")
+            logger.warning(
+                f"{LOG} 忽略未知适配器类型: {safe_log_text(adapter_type_str)}"
+            )
             return None
-
-    def _compat_value(self, path: str, value: Any) -> Any:
-        """Normalize a config value using centralized compatibility rules."""
-        normalized = ConfigCompatibility.normalize_value(path, value)
-        if normalized != value:
-            logger.info(f"[ImageGen] 兼容旧配置: {path} {value!r} -> {normalized!r}")
-        return normalized
-
-    def _compat_mapping(self, path: str, value: Mapping[str, Any]) -> dict[str, Any]:
-        """Normalize a config mapping using centralized compatibility rules."""
-        return ConfigCompatibility.normalize_mapping(path, value)
 
     def _get_provider_int_override(
         self,
@@ -791,11 +984,11 @@ class ConfigManager:
                 else ""
             )
             logger.info(
-                f"[ImageGen] 未匹配到当前模型配置，默认使用: {matched_config.name}/{current_model}"
+                f"{LOG} 未匹配到当前模型配置，默认使用: {safe_log_text(matched_config.name)}/{safe_log_text(current_model)}"
             )
 
         if not matched_config:
-            logger.error("[ImageGen] 未找到任何有效的生图模型配置")
+            logger.error(f"{LOG} 未找到任何有效的生图模型配置")
             return None
 
         return replace(
@@ -825,7 +1018,7 @@ class ConfigManager:
         )
 
         if not isinstance(raw, list):
-            logger.warning("[ImageGen] capability_options 配置格式错误，已按空列表处理")
+            logger.warning(f"{LOG} capability_options 配置格式错误，已按空列表处理")
             raw = []
 
         capability_alias_map = {
@@ -877,7 +1070,7 @@ class ConfigManager:
         value = self._config.setdefault("prompt_templates", {})
         if isinstance(value, dict):
             return value
-        logger.warning("[ImageGen] prompt_templates 配置格式错误，已重置为空对象")
+        logger.warning(f"{LOG} prompt_templates 配置格式错误，已重置为空对象")
         value = {}
         self._config["prompt_templates"] = value
         return value
@@ -959,11 +1152,6 @@ class ConfigManager:
         """获取人设模板字典。"""
         return self._plugin_config.personas
 
-    @property
-    def enable_llm_tool(self) -> bool:
-        """是否启用任意 LLM 工具。"""
-        return bool(self._plugin_config.enabled_llm_tools)
-
     def is_llm_tool_enabled(self, tool_name: str) -> bool:
         """检查指定 LLM 工具是否启用。"""
         return tool_name in self._plugin_config.enabled_llm_tools
@@ -1009,17 +1197,6 @@ class ConfigManager:
         return self._plugin_config.safety_audit_settings
 
     # ---------------------- 供应商查询方法 ----------------------
-    def has_provider_type(self, adapter_type: AdapterType) -> bool:
-        """检查配置中是否包含指定类型的供应商。
-
-        Args:
-            adapter_type: 要检查的适配器类型。
-
-        Returns:
-            如果配置中包含该类型的供应商则返回 True，否则返回 False。
-        """
-        return any(cfg.type == adapter_type for cfg in self._all_provider_configs)
-
     def get_provider_config(self, adapter_type: AdapterType) -> AdapterConfig | None:
         """获取指定类型的供应商配置。
 

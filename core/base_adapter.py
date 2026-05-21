@@ -8,8 +8,8 @@ import aiohttp
 from astrbot.api import logger
 
 from .constants import DEFAULT_DOWNLOAD_TIMEOUT
+from .logging_utils import log_prefix, mask_sensitive
 from .types import AdapterConfig, GenerationRequest, GenerationResult, ImageCapability
-from .utils import mask_sensitive
 
 
 class BaseImageAdapter(abc.ABC):
@@ -73,10 +73,7 @@ class BaseImageAdapter(abc.ABC):
     def _get_log_prefix(self, task_id: str | None = None) -> str:
         """获取统一的日志前缀。"""
         adapter_name = self.__class__.__name__.replace("Adapter", "")
-        prefix = f"[ImageGen] [{adapter_name}]"
-        if task_id:
-            prefix += f" [{task_id}]"
-        return prefix
+        return log_prefix(adapter_name, task_id)
 
     def _get_timeout(self) -> aiohttp.ClientTimeout:
         """获取统一的请求超时配置。"""

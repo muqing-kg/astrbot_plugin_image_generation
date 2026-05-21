@@ -7,6 +7,7 @@ from typing import Any
 from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter
+from ..core.logging_utils import safe_log_error_body, safe_log_mapping
 from ..core.types import GenerationRequest, ImageCapability
 
 
@@ -75,12 +76,14 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(
-                            f"{prefix} Compositions 错误 ({resp.status}, 耗时: {duration:.2f}s): {error_text}"
+                            f"{prefix} Compositions 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                         )
                         return None, f"API 错误 ({resp.status})"
 
                     data_json = await resp.json()
-                    logger.debug(f"{prefix} Compositions 响应: {data_json}")
+                    logger.debug(
+                        f"{prefix} Compositions 响应: {safe_log_mapping(data_json)}"
+                    )
                     logger.info(f"{prefix} Compositions 成功 (耗时: {duration:.2f}s)")
                     return await self._extract_images(data_json, request.task_id)
             else:
@@ -112,12 +115,14 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(
-                            f"{prefix} Generations 错误 ({resp.status}, 耗时: {duration:.2f}s): {error_text}"
+                            f"{prefix} Generations 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                         )
                         return None, f"API 错误 ({resp.status})"
 
                     data_json = await resp.json()
-                    logger.debug(f"{prefix} Generations 响应: {data_json}")
+                    logger.debug(
+                        f"{prefix} Generations 响应: {safe_log_mapping(data_json)}"
+                    )
                     logger.info(f"{prefix} Generations 成功 (耗时: {duration:.2f}s)")
                     return await self._extract_images(data_json, request.task_id)
 
@@ -134,7 +139,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
         if response is None:
             return None, "响应为空"
         if "data" not in response:
-            return None, f"响应中未找到 data 字段: {response}"
+            return None, f"响应中未找到 data 字段: {safe_log_mapping(response)}"
 
         data = response.get("data")
         if data is None:
@@ -185,11 +190,11 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     results[f"key_{i}"] = {"status": status_code, "data": resp_json}
                     if status_code == 200:
                         logger.info(
-                            f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取成功: {resp_json}"
+                            f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取成功: {safe_log_mapping(resp_json)}"
                         )
                     else:
                         logger.warning(
-                            f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取失败 ({status_code}): {resp_json}"
+                            f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取失败 ({status_code}): {safe_log_mapping(resp_json)}"
                         )
             except Exception as e:
                 logger.error(

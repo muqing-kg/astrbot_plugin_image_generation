@@ -15,8 +15,13 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.core.utils.io import download_image_by_url
 
+from .logging_utils import log_prefix, mask_sensitive, safe_log_url
+
 if TYPE_CHECKING:
     from astrbot.api.event import AstrMessageEvent
+
+
+LOG = log_prefix("ImageProcessor")
 
 
 class ImageProcessor:
@@ -71,7 +76,7 @@ class ImageProcessor:
             path = os.path.realpath(candidate)
             if os.path.exists(path) and os.path.isfile(path):
                 return path
-            logger.warning(f"[ImageGen] 本地参考图不存在或不是文件: {path}")
+            logger.warning(f"{LOG} 本地参考图不存在或不是文件: {safe_log_url(path)}")
         return None
 
     def _is_absolute_path(self, value: str) -> bool:
@@ -118,7 +123,7 @@ class ImageProcessor:
                     data = f.read()
             else:
                 if not self._is_network_url(url):
-                    logger.warning(f"[ImageGen] 不支持的图片来源: {url}")
+                    logger.warning(f"{LOG} 不支持的图片来源: {safe_log_url(url)}")
                     return None
                 # 使用插件临时目录
                 file_name = f"ref_{hashlib.md5(url.encode()).hexdigest()[:10]}"
@@ -132,15 +137,13 @@ class ImageProcessor:
                 return None
 
             if len(data) > self._max_image_size_mb * 1024 * 1024:
-                logger.warning(
-                    f"[ImageGen] 图片超过大小限制 ({self._max_image_size_mb}MB)"
-                )
+                logger.warning(f"{LOG} 图片超过大小限制 ({self._max_image_size_mb}MB)")
                 return None
 
             mime = self._detect_mime_type(data)
             return data, mime
         except Exception as exc:
-            logger.error(f"[ImageGen] 获取图片失败 (URL/Path: {url}): {exc}")
+            logger.error(f"{LOG} 获取图片失败: {safe_log_url(url)} ({exc})")
         return None
 
     def _detect_mime_type(self, data: bytes) -> str:
@@ -164,7 +167,7 @@ class ImageProcessor:
                 with open(path, "rb") as f:
                     return f.read()
         except Exception as e:
-            logger.debug(f"[ImageGen] 获取头像失败 (user_id={user_id}): {e}")
+            logger.debug(f"{LOG} 获取头像失败 (user_id={mask_sensitive(user_id)}): {e}")
         return None
 
     async def fetch_images_from_event(
@@ -205,7 +208,7 @@ class ImageProcessor:
                         if avatar_data := await self.get_avatar(uid):
                             images_data.append((avatar_data, "image/jpeg"))
             except Exception as e:
-                logger.error(f"[ImageGen] 提取消息组件图片失败: {e}")
+                logger.error(f"{LOG} 提取消息组件图片失败: {e}", exc_info=True)
                 continue
         return images_data
 
@@ -220,5 +223,5 @@ class ImageProcessor:
                 f.write(img_bytes)
             return file_path
         except Exception as exc:
-            logger.error(f"[ImageGen] 保存图片失败: {exc}")
+            logger.error(f"{LOG} 保存图片失败: {exc}", exc_info=True)
             return None

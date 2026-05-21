@@ -19,6 +19,7 @@ from .types import (
     GenerationResult,
     ImageData,
 )
+from .logging_utils import log_prefix
 from .utils import convert_images_batch
 
 
@@ -68,7 +69,10 @@ class ImageGenerator:
         try:
             return await self.adapter.generate(patched_request)
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"[ImageGen] 生成失败: {exc}", exc_info=True)
+            logger.error(
+                f"{log_prefix('Generator', request.task_id)} 生成失败: {exc}",
+                exc_info=True,
+            )
             return GenerationResult(images=None, error=str(exc))
 
     def update_model(self, model: str) -> None:

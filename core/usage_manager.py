@@ -13,9 +13,13 @@ from typing import TYPE_CHECKING
 from astrbot.api import logger
 
 from .constants import USAGE_DATA_RETENTION_DAYS
+from .logging_utils import log_prefix
 
 if TYPE_CHECKING:
     from .config_manager import UsageSettings
+
+
+LOG = log_prefix("Usage")
 
 
 class UsageManager:
@@ -56,7 +60,7 @@ class UsageManager:
                         del self._usage_data[key]
                     self._save_usage_data()
             except Exception as exc:
-                logger.error(f"[ImageGen] 加载使用数据失败: {exc}")
+                logger.error(f"{LOG} 加载使用数据失败: {exc}", exc_info=True)
                 self._usage_data = {}
 
     def _save_usage_data(self) -> None:
@@ -66,7 +70,7 @@ class UsageManager:
             with open(self._usage_file, "w", encoding="utf-8") as f:
                 json.dump(self._usage_data, f, ensure_ascii=False, indent=2)
         except Exception as exc:
-            logger.error(f"[ImageGen] 保存使用数据失败: {exc}")
+            logger.error(f"{LOG} 保存使用数据失败: {exc}", exc_info=True)
 
     def is_session_blocked(self, user_id: str) -> bool:
         """Check whether the current session UMO is blocked."""

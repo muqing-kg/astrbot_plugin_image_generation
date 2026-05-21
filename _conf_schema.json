@@ -1,7 +1,7 @@
 {
   "enable_llm_tool": {
     "description": "启用 LLM 工具",
-    "hint": "选择允许 LLM 在对话中调用的工具。生图工具用于普通生图、预设生图、自拍/人设生图和图生图；预设查询工具用于查看预设/人设列表和详情；预设编辑工具用于创建、删除预设。",
+    "hint": "选择允许 LLM 调用的工具：生图、预设查询和预设编辑。",
     "type": "list",
     "options": [
       "生图工具",
@@ -10,48 +10,47 @@
     ],
     "default": [
       "生图工具",
-      "预设查询工具",
-      "预设编辑工具"
+      "预设查询工具"
     ]
   },
   "api_providers": {
     "type": "template_list",
-    "description": "API 供应商配置",
-    "hint": "配置多个图像生成 API 供应商",
+    "description": "图像模型供应商",
+    "hint": "配置一个或多个图像生成供应商；模型选择格式为“供应商名称/模型名称”。",
     "templates": {
       "gemini": {
         "name": "Gemini 接口",
-        "hint": "使用 Gemini 的图像生成接口",
+        "hint": "调用 Gemini 原生图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
             "type": "string",
             "default": ""
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "description": "API 密钥",
+            "hint": "填写该供应商的 API Key 或 Token；可配置多个用于轮换。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
             "type": "list",
             "default": [
               "gemini-3-pro-image-preview",
@@ -61,7 +60,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -77,8 +76,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -88,8 +87,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -101,38 +100,38 @@
         }
       },
       "gemini_openai": {
-        "name": "Gemini OpenAI兼容接口",
-        "hint": "使用兼容Openai格式的 Gemini图像生成接口",
+        "name": "Gemini OpenAI 兼容接口",
+        "hint": "调用兼容 OpenAI 格式的 Gemini 图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
             "type": "string",
             "default": ""
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "description": "API 密钥",
+            "hint": "填写该供应商的 API Key 或 Token；可配置多个用于轮换。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
             "type": "list",
             "default": [
               "gemini-3-pro-image",
@@ -141,7 +140,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -155,8 +154,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -166,8 +165,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -180,37 +179,37 @@
       },
       "openai": {
         "name": "OpenAI 接口",
-        "hint": "使用 OpenAI 的图像生成接口",
+        "hint": "调用 OpenAI 图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
             "type": "string",
             "default": ""
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "description": "API 密钥",
+            "hint": "填写该供应商的 API Key 或 Token；可配置多个用于轮换。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
             "type": "list",
             "default": [
               "gpt-image-2",
@@ -222,7 +221,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -237,8 +236,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -248,8 +247,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -260,7 +259,7 @@
           },
           "model_family": {
             "description": "模型系列",
-            "hint": "选择使用的 OpenAI 模型系列，影响 API 调用方式（如图生图、response_format 等）。选择 auto 时，根据当前选中的模型名称自动识别：包含 gpt-image 时识别为 gpt-image 系列，否则为 dall-e 系列。",
+            "hint": "影响 OpenAI 请求格式。auto 会按模型名自动识别 gpt-image 或 dall-e 系列。",
             "type": "string",
             "options": [
               "auto",
@@ -273,37 +272,37 @@
       },
       "volcengine_ark": {
         "name": "火山方舟接口",
-        "hint": "使用火山方舟 /api/v3/images/generations 图片生成接口",
+        "hint": "调用火山方舟 /api/v3/images/generations 图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": "火山方舟"
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "默认 https://ark.cn-beijing.volces.com；也可填写到 /api/v3 或 /api/v3/images/generations 的完整地址",
+            "hint": "默认 https://ark.cn-beijing.volces.com；也可填写包含 /api/v3 的完整地址。",
             "type": "string",
             "default": "https://ark.cn-beijing.volces.com"
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "火山方舟 API Key，按 Bearer Token 发送",
+            "description": "API 密钥",
+            "hint": "填写火山方舟 API Key；请求时会按 Bearer Token 发送。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换。请按控制台实际 Model ID 或 Endpoint ID 修改。",
+            "hint": "用于 /生图模型 命令切换；请按控制台实际 Model ID 或 Endpoint ID 维护。",
             "type": "list",
             "default": [
               "doubao-seedream-5-0-260128",
@@ -313,7 +312,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "Seedream 5.0 lite/4.5/4.0 支持文生图、图生图、宽高比和分辨率。",
+            "hint": "按当前模型实际能力勾选；Seedream 系列通常支持文生图、图生图、宽高比和分辨率。",
             "type": "list",
             "options": [
               "文生图",
@@ -329,8 +328,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -340,8 +339,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -352,13 +351,13 @@
           },
           "watermark": {
             "description": "添加水印",
-            "hint": "是否在右下角添加“AI生成”水印。",
+            "hint": "开启后在图片右下角添加“AI 生成”水印。",
             "type": "bool",
             "default": true
           },
           "sequential_image_generation": {
             "description": "组图模式",
-            "hint": "auto 允许模型按提示词生成组图；disabled 只生成单图。",
+            "hint": "auto 允许模型按提示词生成组图；disabled 仅生成单图。",
             "type": "string",
             "options": [
               "disabled",
@@ -368,7 +367,7 @@
           },
           "sequential_max_images": {
             "description": "组图最大生成张数",
-            "hint": "仅组图模式为 auto 时生效。输入参考图数量 + 生成图数量不能超过 15。",
+            "hint": "仅组图模式为 auto 时生效；参考图数量与生成图数量合计不能超过 15。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -379,7 +378,7 @@
           },
           "max_reference_images": {
             "description": "最大参考图数量",
-            "hint": "Seedream 5.0 lite/4.5/4.0 最多支持 14 张参考图。",
+            "hint": "限制单次请求可使用的参考图数量，最高 14 张。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -390,7 +389,7 @@
           },
           "optimize_prompt_mode": {
             "description": "提示词优化模式",
-            "hint": "standard 质量更高但耗时较长；fast 更快但质量一般，部分模型不支持。留空则不发送。",
+            "hint": "standard 质量更高但耗时较长；fast 更快但质量较低；留空则不发送。",
             "type": "string",
             "options": [
               "",
@@ -401,7 +400,7 @@
           },
           "enable_web_search": {
             "description": "启用联网搜索",
-            "hint": "仅 doubao-seedream-5.0-lite 支持。模型会自主判断是否搜索互联网内容。",
+            "hint": "仅部分模型支持；开启后模型可自行判断是否检索互联网内容。",
             "type": "bool",
             "default": false
           }
@@ -409,37 +408,37 @@
       },
       "siliconflow_adapter": {
         "name": "硅基流动接口",
-        "hint": "使用 SiliconFlow /v1/images/generations 图像生成接口",
+        "hint": "调用 SiliconFlow /v1/images/generations 图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": "硅基流动"
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "默认 https://api.siliconflow.cn；也可填写包含 /v1 的地址，插件会自动清理",
+            "hint": "默认 https://api.siliconflow.cn；也可填写包含 /v1 的地址，插件会自动规范化。",
             "type": "string",
             "default": "https://api.siliconflow.cn"
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "SiliconFlow API Key，按 Bearer Token 发送",
+            "description": "API 密钥",
+            "hint": "填写 SiliconFlow API Key；请求时会按 Bearer Token 发送。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。Qwen-Image-Edit 系列支持多参考图。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
             "type": "list",
             "default": [
               "Kwai-Kolors/Kolors",
@@ -450,7 +449,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。Qwen-Image-Edit-2509 可使用最多 3 张参考图。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -466,8 +465,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -477,8 +476,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -489,13 +488,13 @@
           },
           "negative_prompt": {
             "description": "反向提示词",
-            "hint": "可选，发送为 negative_prompt",
+            "hint": "可选；填写后随请求发送为 negative_prompt。",
             "type": "string",
             "default": ""
           },
           "num_inference_steps": {
             "description": "推理步数",
-            "hint": "范围 1-100，留空则不发送该字段",
+            "hint": "范围 1–100；填 0 表示不发送该字段。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -506,7 +505,7 @@
           },
           "guidance_scale": {
             "description": "提示词遵循强度",
-            "hint": "范围 0-20。Kolors 明确支持；Qwen 编辑示例中也可传入，留空则不发送。",
+            "hint": "范围 0–20；留空表示不发送该字段。",
             "type": "string",
             "default": "7.5"
           }
@@ -514,37 +513,37 @@
       },
       "gitee_ai": {
         "name": "Gitee AI 接口",
-        "hint": "使用 Gitee AI /v1/images/generations 与 /v1/images/edits 图像接口",
+        "hint": "调用 Gitee AI /v1/images/generations 与 /v1/images/edits 图像接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "默认 https://ai.gitee.com",
+            "hint": "默认 https://ai.gitee.com。",
             "type": "string",
             "default": "https://ai.gitee.com"
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "Gitee AI Access Token，按 Bearer Token 发送",
+            "description": "API 密钥",
+            "hint": "填写 Gitee AI Access Token；请求时会按 Bearer Token 发送。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。endpoint 为自动时，编辑类模型带参考图自动使用 /v1/images/edits。请按 Gitee AI 模型列表和账号资源包实际可用模型调整。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。自动接口模式会按模型与参考图选择生成或编辑接口。",
             "type": "list",
             "default": [
               "FLUX.1-dev",
@@ -573,8 +572,8 @@
             ]
           },
           "image_endpoint": {
-            "description": "图生图接口选择",
-            "hint": "自动：按当前模型判断，编辑类模型走 /v1/images/edits，其他模型走 /v1/images/generations；也可以手动固定指定接口。",
+            "description": "图像接口模式",
+            "hint": "auto 自动选择生成或编辑接口；generations、edits 可手动固定接口。",
             "type": "string",
             "options": [
               "auto",
@@ -585,7 +584,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "Gitee AI 接口支持文生图、参考图生成和尺寸控制；请按当前模型实际能力勾选。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -601,8 +600,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -612,8 +611,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -625,38 +624,38 @@
         }
       },
       "jimeng2api": {
-        "name": "即梦逆向生图接口",
-        "hint": "使用[iptag/jimeng-api]项目的图像生成接口",
+        "name": "即梦接口",
+        "hint": "调用 iptag/jimeng-api 项目的图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "填写 jimeng-api 服务地址。",
             "type": "string",
             "default": ""
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "description": "API 密钥",
+            "hint": "如服务启用了鉴权，请填写访问密钥；可配置多个用于轮换。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换；请按服务实际支持模型维护。",
             "type": "list",
             "default": [
               "jimeng-4.5",
@@ -665,7 +664,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -681,8 +680,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -692,8 +691,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -706,37 +705,37 @@
       },
       "grok": {
         "name": "Grok (xAI) 接口",
-        "hint": "使用 Grok 的图像生成接口",
+        "hint": "调用 Grok 图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
-            "description": "适配器名称",
-            "hint": "用于区分不同适配器的名称,生图模型格式为 '适配器名称/模型名称'",
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
             "type": "string",
             "default": ""
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
             "type": "string",
             "default": ""
           },
           "proxy": {
             "description": "代理地址",
-            "hint": "例如: http://127.0.0.1:7890",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
             "type": "string",
             "default": ""
           },
           "api_keys": {
-            "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "description": "API 密钥",
+            "hint": "填写该供应商的 API Key 或 Token；可配置多个用于轮换。",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
             "type": "list",
             "default": [
               "grok-imagine-image-pro",
@@ -745,7 +744,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "按当前模型实际能力勾选；未勾选的能力不会在请求中使用。",
             "type": "list",
             "options": [
               "文生图",
@@ -761,8 +760,8 @@
             ]
           },
           "timeout": {
-            "description": "生图超时时间覆盖（秒）",
-            "hint": "留空或填 0 表示使用 generation 中的公共超时时间配置",
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -772,8 +771,8 @@
             "default": 0
           },
           "max_retry_attempts": {
-            "description": "最大重试次数覆盖",
-            "hint": "留空或填 0 表示使用 generation 中的公共重试次数配置",
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -787,18 +786,18 @@
     }
   },
   "generation": {
-    "description": "生图配置",
-    "hint": "图像生成的行为配置",
+    "description": "生成设置",
+    "hint": "配置默认模型、并发、超时、分辨率和提示消息。",
     "type": "object",
     "items": {
       "model": {
         "description": "生图模型",
-        "hint": "可以通过 /生图模型 命令切换,格式为 '适配器名称/模型名称',留空自动使用第一个可用模型",
+        "hint": "可通过 /生图模型 命令切换；格式为“供应商名称/模型名称”。留空时自动使用第一个可用模型。",
         "type": "string",
         "default": ""
       },
       "timeout": {
-        "description": "生图超时时间（秒）",
+        "description": "全局超时时间（秒）",
         "type": "int",
         "slider": {
           "min": 60,
@@ -808,7 +807,7 @@
         "default": 180
       },
       "max_retry_attempts": {
-        "description": "最大重试次数",
+        "description": "全局重试次数",
         "type": "int",
         "slider": {
           "min": 0,
@@ -819,7 +818,7 @@
       },
       "max_concurrent_tasks": {
         "description": "最大并发任务数",
-        "hint": "同时生成图片的最大数量,防止资源耗尽",
+        "hint": "同时执行的生图任务上限，用于控制资源占用。",
         "type": "int",
         "slider": {
           "min": 1,
@@ -830,7 +829,7 @@
       },
       "default_aspect_ratio": {
         "description": "默认宽高比",
-        "hint": "使用命令生图时默认使用的图片宽高比。选择自动时由模型自行决定",
+        "hint": "命令生图时默认使用的宽高比；选择“自动”时由模型决定。",
         "type": "string",
         "default": "自动",
         "options": [
@@ -849,7 +848,7 @@
       },
       "default_resolution": {
         "description": "默认分辨率",
-        "hint": "使用命令生图时默认使用的图片分辨率（仅部分模型支持）",
+        "hint": "命令生图时默认使用的分辨率；仅部分模型支持。",
         "type": "string",
         "default": "1K",
         "options": [
@@ -860,44 +859,44 @@
       },
       "show_generation_info": {
         "description": "显示生图信息",
-        "hint": "生图成功后,发送消息展示生图耗时和生成图片数量",
+        "hint": "生图成功后展示耗时和生成图片数量。",
         "type": "bool",
         "default": false
       },
       "show_model_info": {
         "description": "显示模型信息",
-        "hint": "生图成功后,发送消息展示所使用的模型名称",
+        "hint": "生图成功后展示使用的模型名称。",
         "type": "bool",
         "default": false
       },
       "start_task_message_template": {
         "description": "开始生图任务提示模板",
-        "hint": "发送生图任务开始提示。支持占位符：{reference_image_count}参考图数量、{prompt}最终生图提示词、{preset}命中的预设或人设名、{aspect_ratio}宽高比、{resolution}分辨率、{reference_images_block}参考图块、{preset_block}预设/人设块。留空则不发送提示",
+        "hint": "任务开始时发送的提示。支持占位符：{reference_image_count}、{prompt}、{preset}、{aspect_ratio}、{resolution}、{reference_images_block}、{preset_block}。留空则不发送。",
         "type": "text",
         "default": "已开始生图任务{reference_images_block}{preset_block}"
       }
     }
   },
   "user_limits": {
-    "description": "用户限制配置",
-    "hint": "针对用户的生图限制",
+    "description": "使用限制",
+    "hint": "配置会话黑名单、用户频率限制、每日额度和参考图大小限制。",
     "type": "object",
     "items": {
       "umo_blacklist": {
         "description": "会话 UMO 黑名单",
-        "hint": "填写 unified_msg_origin（UMO）；黑名单中的会话无法使用生图功能",
+        "hint": "填写 unified_msg_origin（UMO）；命中的会话无法使用生图功能。",
         "type": "list",
         "default": []
       },
       "blacklist_block_message": {
-        "description": "黑名单拒绝提示文本",
-        "hint": "黑名单命中时返回给用户的文本，留空则不发送任何文本",
+        "description": "黑名单拒绝提示",
+        "hint": "黑名单命中时返回给用户的文本；留空则不发送。",
         "type": "string",
-        "default": "❌ 当前会话未启用生图功能"
+        "default": "❌ 当前会话已被加入黑名单，无法使用生图功能"
       },
       "rate_limit_seconds": {
         "description": "速率限制（秒）",
-        "hint": "单个用户两次请求之间的最小间隔时间,0 表示不限制",
+        "hint": "同一用户两次请求之间的最小间隔；填 0 表示不限制。",
         "type": "int",
         "slider": {
           "min": 0,
@@ -907,8 +906,8 @@
         "default": 0
       },
       "max_image_size_mb": {
-        "description": "最大图片限制 (MB)",
-        "hint": "允许上传的参考图最大大小,超过此大小的图片将被忽略",
+        "description": "最大参考图大小（MB）",
+        "hint": "超过该大小的参考图会被忽略。",
         "type": "int",
         "slider": {
           "min": 1,
@@ -918,14 +917,14 @@
         "default": 10
       },
       "enable_daily_limit": {
-        "description": "启用每日生图数量限制",
-        "hint": "开启后将限制每个用户每日生成的图片数量",
+        "description": "启用每日额度",
+        "hint": "开启后限制每个用户每日可生成的图片数量。",
         "type": "bool",
         "default": false
       },
       "daily_limit_count": {
-        "description": "每日生图数量限制次数",
-        "hint": "每个用户每日允许生成的最大图片数量",
+        "description": "每日额度",
+        "hint": "每个用户每日可生成的最大图片数量。",
         "type": "int",
         "slider": {
           "min": 1,
@@ -937,67 +936,67 @@
     }
   },
   "safety_audit": {
-    "description": "安全审核配置",
-    "hint": "包含生图前提示词审核和生图后图片审核",
+    "description": "安全审核",
+    "hint": "配置提示词审核、图片审核和审核白名单。",
     "type": "object",
     "items": {
       "umo_whitelist": {
-        "description": "审核白名单会话 UMO 列表",
-        "hint": "填写会话 unified_msg_origin（UMO），命中的会话将跳过提示词和图片审核流程",
+        "description": "审核白名单 UMO",
+        "hint": "填写 unified_msg_origin（UMO）；命中的会话会跳过提示词和图片审核。",
         "type": "list",
         "default": []
       },
       "prompt_audit": {
-        "description": "生图前提示词审核",
+        "description": "提示词审核",
         "type": "object",
         "items": {
           "blocked_words": {
-            "description": "自定义屏蔽词列表",
-            "hint": "包含任一词时将直接拒绝生图请求",
+            "description": "屏蔽词列表",
+            "hint": "提示词包含任一词时直接拒绝生图请求。",
             "type": "list",
             "default": []
           },
           "enable_ai_audit": {
             "description": "启用 AI 提示词审核",
-            "hint": "开启后会调用对话模型审核提示词",
+            "hint": "开启后调用对话模型审核用户提示词。",
             "type": "bool",
             "default": false
           },
           "ai_provider_id": {
             "description": "AI 审核 Provider",
-            "hint": "可直接选择用于审核的对话模型 Provider，留空时使用当前会话模型",
+            "hint": "选择用于审核的对话模型 Provider；留空时使用当前会话模型。",
             "type": "string",
             "default": "",
             "_special": "select_provider"
           },
           "ai_prompt": {
             "description": "AI 审核提示词",
-            "hint": "直接发送给审核模型的提示词，支持 {prompt} 占位符；未包含时会自动附加用户提示词",
+            "hint": "发送给审核模型的提示词；支持 {prompt} 占位符，未包含时会自动附加用户提示词。",
             "type": "text",
             "default": "你是生图安全审核员。请判断以下用户提示词是否安全且可用于常规图像生成。\n用户提示词：{prompt}\n仅输出 JSON：{\"allow\": true/false, \"reason\": \"简短原因\"}。"
           }
         }
       },
       "image_audit": {
-        "description": "生图后图片审核",
+        "description": "图片审核",
         "type": "object",
         "items": {
           "enable_ai_audit": {
             "description": "启用 AI 图片审核",
-            "hint": "开启后会在发送前进行图片内容审核",
+            "hint": "开启后在发送图片前调用对话模型审核图片内容。",
             "type": "bool",
             "default": false
           },
           "ai_provider_id": {
             "description": "AI 审核 Provider",
-            "hint": "可直接选择用于审核的对话模型 Provider，留空时使用当前会话模型",
+            "hint": "选择用于审核的对话模型 Provider；留空时使用当前会话模型。",
             "type": "string",
             "default": "",
             "_special": "select_provider"
           },
           "ai_prompt": {
             "description": "AI 审核提示词",
-            "hint": "直接发送给审核模型的提示词；仅在显式写入 {prompt} 占位符时才会附带当前提示词",
+            "hint": "发送给审核模型的提示词；仅在包含 {prompt} 时附带当前提示词。",
             "type": "text",
             "default": "你是图像内容安全审核员。请判断输入图片是否安全且可发送给普通用户。仅输出 JSON：{\"allow\": true/false, \"reason\": \"简短原因\"}。"
           }
@@ -1006,13 +1005,13 @@
     }
   },
   "prompt_templates": {
-    "description": "提示词模板配置",
-    "hint": "集中配置预设提示词和人设模板。使用 /预设 查看，/生图 可按名称使用。",
+    "description": "提示词模板",
+    "hint": "集中配置预设提示词和人设模板；可通过 /预设 查看，通过 /生图 按名称使用。",
     "type": "object",
     "items": {
       "presets": {
         "description": "预设提示词",
-        "hint": "预定义的图片生成提示词模板。简单格式: '名称:提示词'。高级格式: '名称:{\"prompt\":\"提示词\",\"aspect_ratio\":\"16:9\",\"resolution\":\"2K\",\"description\":\"描述\"}'",
+        "hint": "每项格式为“名称:提示词”；也支持 JSON 配置 prompt、aspect_ratio、resolution 和 description。",
         "type": "list",
         "default": [
           "手办化:Your task is to create a photorealistic, masterpiece-quality image of a 1/7 scale commercialized figurine based on the user's character. The final image must be in a realistic style and environment.\n\n**Crucial Instruction on Face & Likeness:** The figurine's face is the most critical element. It must be a perfect, high-fidelity 3D translation of the character from the source image. The sculpt must be sharp, clean, and intricately detailed, accurately capturing the original artwork's facial structure, eye style, expression, and hair. The final result must be immediately recognizable as the same character, elevated to a premium physical product standard. Do NOT generate a generic or abstract face.\n\n**Scene Composition (Strictly follow these details):**\n1. **Figurine & Base:** Place the figure on a computer desk. It must stand on a simple, circular, transparent acrylic base WITHOUT any text or markings.\n2. **Computer Monitor:** In the background, a computer monitor must display 3D modeling software (like ZBrush or Blender) with the digital sculpt of the very same figurine visible on the screen.\n3. **Artwork Display:** Next to the computer screen, include a transparent acrylic board with a wooden base. This board holds a print of the original 2D artwork that the figurine is based on.\n4. **Environment:** The overall setting is a desk, with elements like a keyboard to enhance realism. The lighting should be natural and well-lit, as if in a room.",
@@ -1025,29 +1024,29 @@
       },
       "personas": {
         "description": "人设模板",
-        "hint": "配置固定人设描述和参考图。使用 /生图 <人设名称> [额外提示词] 时会自动拼接人设描述并加入参考图。",
+        "hint": "配置固定人设描述和参考图；使用 /生图 <人设名称> [额外提示词] 时自动应用。",
         "type": "template_list",
         "default": [],
         "templates": {
           "persona": {
             "name": "人设",
-            "hint": "一个可用于生图的人设模板",
+            "hint": "可复用的人设模板。",
             "display_item": "persona_name",
             "hide_hint_in_list": true,
             "items": {
               "persona_name": {
                 "description": "人设名称",
-                "hint": "用于 /生图 指令匹配的人设名称",
+                "hint": "用于 /生图 指令匹配。",
                 "type": "string"
               },
               "persona_prompt": {
-                "description": "人设文本描述",
-                "hint": "使用该人设生图时会自动拼接到提示词前面",
+                "description": "人设描述",
+                "hint": "使用该人设生图时会拼接到提示词前。",
                 "type": "text"
               },
               "persona_image": {
                 "description": "人设参考图",
-                "hint": "用于图生图的人设参考图，可上传本地图片文件",
+                "hint": "可选；作为图生图参考图使用。",
                 "type": "file",
                 "file_types": [
                   "jpg",

@@ -9,11 +9,16 @@ from PIL import Image
 from astrbot.api import logger
 
 from .constants import (
-    MASK_MIN_LENGTH,
-    MASK_PLACEHOLDER,
-    MASK_VISIBLE_CHARS,
     SUPPORTED_ASPECT_RATIOS,
     SUPPORTED_RESOLUTIONS,
+)
+from .logging_utils import (
+    log_prefix,
+    mask_sensitive as mask_sensitive,
+    safe_log_error_body as safe_log_error_body,
+    safe_log_mapping as safe_log_mapping,
+    safe_log_text as safe_log_text,
+    safe_log_url as safe_log_url,
 )
 from .types import ImageData
 
@@ -28,6 +33,7 @@ SUPPORTED_IMAGE_FORMATS = {
 # 使用 constants.py 中的定义，转换为 set 以保持向后兼容
 ALLOWED_ASPECT_RATIOS = set(SUPPORTED_ASPECT_RATIOS)
 ALLOWED_RESOLUTIONS = set(SUPPORTED_RESOLUTIONS)
+LOG = log_prefix("Utils")
 
 
 def detect_mime_type(data: bytes) -> str:
@@ -67,10 +73,10 @@ def _sync_convert_image_format(image_data: bytes, mime_type: str) -> ImageData:
 
         output = BytesIO()
         img.save(output, format="JPEG", quality=95)
-        logger.debug("[ImageGen] 已将图像转换为 JPEG")
+        logger.debug(f"{LOG} 已将图像转换为 JPEG")
         return ImageData(data=output.getvalue(), mime_type="image/jpeg")
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"[ImageGen] 图像转换失败: {exc}")
+        logger.error(f"{LOG} 图像转换失败: {exc}")
         return ImageData(data=image_data, mime_type=mime_type)
 
 
@@ -80,7 +86,7 @@ async def convert_image_format(image_data: bytes, mime_type: str) -> ImageData:
     real_mime = detect_mime_type(image_data)
     if real_mime in SUPPORTED_IMAGE_FORMATS:
         return ImageData(data=image_data, mime_type=real_mime)
-    logger.info(f"[ImageGen] 正在转换图像格式: {mime_type} -> image/jpeg")
+    logger.info(f"{LOG} 正在转换图像格式: {mime_type} -> image/jpeg")
     return await asyncio.to_thread(_sync_convert_image_format, image_data, mime_type)
 
 
@@ -105,25 +111,3 @@ def validate_resolution(value: str | None) -> str | None:
     if value is None:
         return None
     return value if value in ALLOWED_RESOLUTIONS else None
-
-
-def mask_sensitive(
-    value: str,
-    visible_chars: int = MASK_VISIBLE_CHARS,
-    min_length: int = MASK_MIN_LENGTH,
-    placeholder: str = MASK_PLACEHOLDER,
-) -> str:
-    """对敏感信息进行脱敏处理。
-
-    Args:
-        value: 需要脱敏的字符串
-        visible_chars: 两端显示的字符数
-        min_length: 需要脱敏的最小长度
-        placeholder: 中间的占位符
-
-    Returns:
-        脱敏后的字符串
-    """
-    if len(value) <= min_length:
-        return placeholder
-    return f"{value[:visible_chars]}{placeholder}{value[-visible_chars:]}"
