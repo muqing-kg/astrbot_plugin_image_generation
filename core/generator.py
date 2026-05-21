@@ -5,12 +5,12 @@ from astrbot.api import logger
 from ..adapter import (
     GeminiAdapter,
     GeminiOpenAIAdapter,
+    GiteeAIAdapter,
     GrokAdapter,
     Jimeng2APIAdapter,
     OpenAIAdapter,
     SiliconFlowAdapter,
     VolcengineArkAdapter,
-    ZImageAdapter,
 )
 from .types import (
     AdapterConfig,
@@ -37,7 +37,7 @@ class ImageGenerator:
             AdapterType.OPENAI: OpenAIAdapter,
             AdapterType.SILICONFLOW: SiliconFlowAdapter,
             AdapterType.VOLCENGINE_ARK: VolcengineArkAdapter,
-            AdapterType.Z_IMAGE: ZImageAdapter,
+            AdapterType.GITEE_AI: GiteeAIAdapter,
             AdapterType.JIMENG2API: Jimeng2APIAdapter,
             AdapterType.GROK: GrokAdapter,
         }

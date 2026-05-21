@@ -194,9 +194,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
 
         payload["watermark"] = self._coerce_bool(extra.get("watermark"), default=True)
 
-        sequential = str(
-            extra.get("sequential_image_generation") or "disabled"
-        ).strip()
+        sequential = str(extra.get("sequential_image_generation") or "disabled").strip()
         if sequential in {"auto", "disabled"}:
             payload["sequential_image_generation"] = sequential
             if sequential == "auto":

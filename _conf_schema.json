@@ -512,9 +512,9 @@
           }
         }
       },
-      "z_image_gitee": {
-        "name": "Z-Image (Gitee) 接口",
-        "hint": "使用Gitee的 Z-Image 图像生成接口",
+      "gitee_ai": {
+        "name": "Gitee AI 接口",
+        "hint": "使用 Gitee AI /v1/images/generations 与 /v1/images/edits 图像接口",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
@@ -526,9 +526,9 @@
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "默认 https://ai.gitee.com",
             "type": "string",
-            "default": ""
+            "default": "https://ai.gitee.com"
           },
           "proxy": {
             "description": "代理地址",
@@ -538,21 +538,54 @@
           },
           "api_keys": {
             "description": "API Keys",
-            "hint": "仅在未选择系统提供商时需要填写",
+            "hint": "Gitee AI Access Token，按 Bearer Token 发送",
             "type": "list",
             "default": []
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换时的可选模型。",
+            "hint": "用于 /生图模型 命令切换时的可选模型。endpoint 为自动时，编辑类模型带参考图自动使用 /v1/images/edits。请按 Gitee AI 模型列表和账号资源包实际可用模型调整。",
             "type": "list",
             "default": [
-              "z-image-turbo"
+              "FLUX.1-dev",
+              "FLUX.2-klein-4B",
+              "Kolors",
+              "DreamO",
+              "LongCat-Image-Edit",
+              "Qwen-Image-Edit",
+              "FLUX.2-dev",
+              "AnimeSharp",
+              "FLUX.2-klein-9B",
+              "FLUX.1-Kontext-dev",
+              "GLM-Image",
+              "z-image-turbo",
+              "stable-diffusion-3.5-large-turbo",
+              "LongCat-Image",
+              "flux-1-schnell",
+              "Qwen-Image-2512",
+              "stable-diffusion-xl-base-1.0",
+              "Qwen-Image",
+              "HiDream-I1-Full",
+              "CogView4_6B",
+              "stable-diffusion-3-medium",
+              "Z-Image",
+              "FLUX_1-Krea-dev"
             ]
+          },
+          "image_endpoint": {
+            "description": "图生图接口选择",
+            "hint": "自动：按当前模型判断，编辑类模型走 /v1/images/edits，其他模型走 /v1/images/generations；也可以手动固定指定接口。",
+            "type": "string",
+            "options": [
+              "auto",
+              "generations",
+              "edits"
+            ],
+            "default": "auto"
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型实际能力覆盖渠道默认能力。留空表示使用渠道默认能力。",
+            "hint": "Gitee AI 接口支持文生图、参考图生成和尺寸控制；请按当前模型实际能力勾选。",
             "type": "list",
             "options": [
               "文生图",
@@ -562,6 +595,7 @@
             ],
             "default": [
               "文生图",
+              "图生图",
               "宽高比",
               "分辨率"
             ]

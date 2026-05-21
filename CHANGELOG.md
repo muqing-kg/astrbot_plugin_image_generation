@@ -1,5 +1,11 @@
 ### 更新日志
 
+- **v1.1.1-2026-05-21**
+  - 将 `z_image_gitee` 从 Z-Image 专用适配器改为 `gitee_ai` Gitee AI 通用图像接口适配器，支持 `/v1/images/generations` 与 `/v1/images/edits`，并保留旧配置键兼容。
+  - Gitee AI 适配器新增图生图接口选择：默认自动按模型选择 generations/edits，也可手动固定指定接口；配置模板仅保留必要连接、模型和能力选项。
+  - 更新 Gitee AI 默认模型列表，并按 Gitee AI edit/generation 模型清单优化自动接口识别。
+  - 新增配置加载迁移检查，自动将旧版配置键转换为新版格式、补齐默认项并清理弃用字段。
+
 - **v1.1.0-2026-05-21**
   - 新增人设模板：可在配置中维护人设名称、固定提示词和可选参考图，并通过 `/生图 <人设名称> [额外提示词]` 或 LLM 生图工具直接使用。
   - 将提示词模板配置统一到 `prompt_templates`，预设迁移为 `prompt_templates.presets`，人设模板放入 `prompt_templates.personas`。

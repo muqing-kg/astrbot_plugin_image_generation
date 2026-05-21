@@ -38,7 +38,7 @@
 | `gemini_openai`       | OpenAI 兼容 `chat/completions`                                 |   ✅    |   ✅    |    ❌     | 通过 OpenAI 兼容格式调用 Gemini 图像生成。                                                         |
 | `openai`              | OpenAI Images API `/v1/images/generations`、`/v1/images/edits` |   ✅    |   ✅    |    ✅     | DALL-E / GPT Image 系列；图生图仅 GPT Image 系列支持。                                             |
 | `volcengine_ark`      | 火山方舟 Images Generations `/api/v3/images/generations`       |   ✅    |   ✅    |    ✅     | Seedream 系列，支持单图和组图；参考图使用 `image` 字段。                                           |
-| `z_image_gitee`       | Gitee AI OpenAI 兼容 `/v1/images/generations`                  |   ✅    |   ❌    |    ✅     | Gitee AI                                                                      |
+| `gitee_ai`            | Gitee AI `/v1/images/generations`、`/v1/images/edits`          |   ✅    |   ✅    |    ✅     | Gitee AI 通用图像接口 |
 | `jimeng2api`          | jimeng-api `/v1/images/generations`、`/v1/images/compositions` |   ✅    |   ✅    |    ✅     | 适用于 [iptag/jimeng-api](https://github.com/iptag/jimeng-api)。                                   |
 | `grok`                | xAI Images API `/v1/images/generations`、`/v1/images/edits`    |   ✅    |   ✅    |    ✅     | Grok / xAI 图像生成接口。                                                                          |
 | `siliconflow_adapter` | SiliconFlow Images API `/v1/images/generations`                |   ✅    |   ✅    |    ✅     | 支持 Kolors、Qwen-Image、Qwen-Image-Edit、Z-Image；多参考图映射到 `image`、`image2`、`image3`。 |

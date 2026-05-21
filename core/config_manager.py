@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -31,6 +32,333 @@ PROVIDER_COMMON_FIELDS = frozenset(
 ADAPTER_EXTRA_DEFAULTS: dict[AdapterType, dict[str, Any]] = {
     AdapterType.OPENAI: {"model_family": "auto"},
 }
+
+
+class ConfigCompatibility:
+    """Helpers for normalizing legacy config formats.
+
+    Keep legacy mappings here so future config renames can be handled by adding
+    entries instead of scattering one-off compatibility code in parsers.
+    """
+
+    DEPRECATED_KEYS: dict[str, set[str]] = {
+        "api_providers.*": {"template"},
+        "api_providers.*[gitee_ai]": {
+            "max_reference_images",
+            "num_inference_steps",
+            "response_format",
+            "user",
+        },
+        "prompt_templates.personas.*": {
+            "template",
+            "name",
+            "prompt",
+            "image",
+            "reference_image",
+        },
+    }
+
+    VALUE_ALIASES: dict[str, dict[str, str]] = {
+        "api_providers.*.__template_key": {
+            "z_image_gitee": "gitee_ai",
+        },
+    }
+
+    KEY_ALIASES: dict[str, dict[str, str]] = {
+        "api_providers.*": {
+            "template": "__template_key",
+        },
+        "prompt_templates.personas.*": {
+            "template": "__template_key",
+            "name": "persona_name",
+            "prompt": "persona_prompt",
+            "image": "persona_image",
+            "reference_image": "persona_image",
+        },
+    }
+
+    TEMPLATE_KEY_ALIASES: dict[str, str] = {
+        "z_image_gitee": "gitee_ai",
+    }
+
+    DEFAULTS: dict[str, dict[str, Any]] = {}
+
+    LIST_ADDITIONS_ON_TEMPLATE_MIGRATION: dict[str, dict[str, list[Any]]] = {
+        "z_image_gitee": {
+            "capability_options": ["图生图"],
+        },
+    }
+
+    _SENTINEL = object()
+
+    @classmethod
+    def normalize_value(cls, path: str, value: Any) -> Any:
+        """Normalize a scalar config value by compatibility path."""
+        if not isinstance(value, str):
+            return value
+        aliases = cls.VALUE_ALIASES.get(path, {})
+        normalized = value.strip()
+        return aliases.get(normalized, normalized)
+
+    @classmethod
+    def normalize_mapping(cls, path: str, value: Mapping[str, Any]) -> dict[str, Any]:
+        """Copy a mapping and fill renamed keys from legacy aliases."""
+        normalized = dict(value)
+        for legacy_key, current_key in cls.KEY_ALIASES.get(path, {}).items():
+            if legacy_key in normalized and current_key not in normalized:
+                normalized[current_key] = normalized[legacy_key]
+        return normalized
+
+    @classmethod
+    def migrate_config(cls, config: dict[str, Any]) -> tuple[bool, list[str]]:
+        """Migrate known legacy config structures in-place.
+
+        Returns:
+            A tuple of (changed, messages) for save decisions and logging.
+        """
+        changed = False
+        messages: list[str] = []
+
+        changed |= cls._migrate_enable_llm_tool(config, messages)
+        changed |= cls._migrate_api_providers(config, messages)
+        changed |= cls._migrate_prompt_templates(config, messages)
+
+        return changed, messages
+
+    @classmethod
+    def _migrate_enable_llm_tool(
+        cls, config: dict[str, Any], messages: list[str]
+    ) -> bool:
+        value = config.get("enable_llm_tool")
+        if not isinstance(value, bool):
+            return False
+
+        config["enable_llm_tool"] = list(ALL_LLM_TOOLS) if value else []
+        messages.append("enable_llm_tool: bool -> list")
+        return True
+
+    @classmethod
+    def _migrate_api_providers(
+        cls, config: dict[str, Any], messages: list[str]
+    ) -> bool:
+        providers = config.get("api_providers")
+        if not isinstance(providers, list):
+            return False
+
+        changed = False
+        for index, provider in enumerate(providers):
+            if not isinstance(provider, dict):
+                continue
+
+            changed |= cls._apply_key_aliases(
+                provider,
+                "api_providers.*",
+                messages,
+                label=f"api_providers[{index}]",
+            )
+
+            template_key = provider.get("__template_key")
+            normalized_key = cls.TEMPLATE_KEY_ALIASES.get(str(template_key).strip())
+            if normalized_key:
+                provider["__template_key"] = normalized_key
+                changed = True
+                messages.append(
+                    f"api_providers[{index}].__template_key: {template_key!r} -> {normalized_key!r}"
+                )
+                changed |= cls._ensure_list_values(
+                    provider,
+                    cls.LIST_ADDITIONS_ON_TEMPLATE_MIGRATION.get(
+                        str(template_key).strip(), {}
+                    ),
+                    messages,
+                    label=f"api_providers[{index}]",
+                )
+                template_key = normalized_key
+
+            if isinstance(template_key, str):
+                changed |= cls._fill_defaults(
+                    provider,
+                    f"api_providers.*[{template_key}]",
+                    messages,
+                    label=f"api_providers[{index}]",
+                )
+                changed |= cls._remove_deprecated_keys(
+                    provider,
+                    f"api_providers.*[{template_key}]",
+                    messages,
+                    label=f"api_providers[{index}]",
+                )
+
+            changed |= cls._remove_deprecated_keys(
+                provider,
+                "api_providers.*",
+                messages,
+                label=f"api_providers[{index}]",
+            )
+
+        return changed
+
+    @classmethod
+    def _migrate_prompt_templates(
+        cls, config: dict[str, Any], messages: list[str]
+    ) -> bool:
+        prompt_templates = config.get("prompt_templates")
+        if prompt_templates is not None and not isinstance(prompt_templates, dict):
+            return False
+
+        changed = False
+        changed |= cls._move_legacy_prompt_templates(config, messages)
+        prompt_templates = config.get("prompt_templates")
+        if not isinstance(prompt_templates, dict):
+            return changed
+
+        personas = prompt_templates.get("personas")
+        if isinstance(personas, list):
+            for index, persona in enumerate(personas):
+                if not isinstance(persona, dict):
+                    continue
+                changed |= cls._ensure_template_key(
+                    persona,
+                    "persona",
+                    messages,
+                    label=f"prompt_templates.personas[{index}]",
+                )
+                changed |= cls._apply_key_aliases(
+                    persona,
+                    "prompt_templates.personas.*",
+                    messages,
+                    label=f"prompt_templates.personas[{index}]",
+                )
+                changed |= cls._remove_deprecated_keys(
+                    persona,
+                    "prompt_templates.personas.*",
+                    messages,
+                    label=f"prompt_templates.personas[{index}]",
+                )
+
+        return changed
+
+    @classmethod
+    def _ensure_template_key(
+        cls,
+        target: dict[str, Any],
+        template_key: str,
+        messages: list[str],
+        *,
+        label: str,
+    ) -> bool:
+        current_key = str(target.get("__template_key") or "").strip()
+        if current_key == template_key:
+            return False
+
+        target["__template_key"] = template_key
+        messages.append(f"{label}.__template_key: {current_key!r} -> {template_key!r}")
+        return True
+
+    @classmethod
+    def _apply_key_aliases(
+        cls,
+        target: dict[str, Any],
+        path: str,
+        messages: list[str],
+        *,
+        label: str,
+    ) -> bool:
+        changed = False
+        for legacy_key, current_key in cls.KEY_ALIASES.get(path, {}).items():
+            if legacy_key not in target:
+                continue
+            if current_key not in target:
+                target[current_key] = target[legacy_key]
+                changed = True
+                messages.append(f"{label}.{legacy_key} -> {current_key}")
+        return changed
+
+    @classmethod
+    def _move_legacy_prompt_templates(
+        cls, config: dict[str, Any], messages: list[str]
+    ) -> bool:
+        legacy_presets = cls._pop_if_present(config, "presets")
+        legacy_personas = cls._pop_if_present(config, "personas")
+        if legacy_presets is cls._SENTINEL and legacy_personas is cls._SENTINEL:
+            return False
+
+        prompt_templates = config.setdefault("prompt_templates", {})
+        if not isinstance(prompt_templates, dict):
+            prompt_templates = {}
+            config["prompt_templates"] = prompt_templates
+
+        if legacy_presets is not cls._SENTINEL and "presets" not in prompt_templates:
+            prompt_templates["presets"] = legacy_presets
+            messages.append("presets -> prompt_templates.presets")
+
+        if legacy_personas is not cls._SENTINEL and "personas" not in prompt_templates:
+            prompt_templates["personas"] = legacy_personas
+            messages.append("personas -> prompt_templates.personas")
+
+        return True
+
+    @classmethod
+    def _fill_defaults(
+        cls,
+        target: dict[str, Any],
+        path: str,
+        messages: list[str],
+        *,
+        label: str,
+    ) -> bool:
+        changed = False
+        for key, default in cls.DEFAULTS.get(path, {}).items():
+            if key not in target:
+                target[key] = default
+                changed = True
+                messages.append(f"{label}.{key}: add default")
+        return changed
+
+    @classmethod
+    def _ensure_list_values(
+        cls,
+        target: dict[str, Any],
+        additions: dict[str, list[Any]],
+        messages: list[str],
+        *,
+        label: str,
+    ) -> bool:
+        changed = False
+        for key, values in additions.items():
+            current = target.get(key)
+            if not isinstance(current, list):
+                continue
+            for value in values:
+                if value not in current:
+                    current.append(value)
+                    changed = True
+                    messages.append(f"{label}.{key}: add {value!r}")
+        return changed
+
+    @classmethod
+    def _remove_deprecated_keys(
+        cls,
+        target: dict[str, Any],
+        path: str,
+        messages: list[str],
+        *,
+        label: str,
+    ) -> bool:
+        changed = False
+        for key in cls.DEPRECATED_KEYS.get(path, set()):
+            if key in target:
+                target.pop(key, None)
+                changed = True
+                messages.append(f"{label}.{key}: removed deprecated key")
+        return changed
+
+    @classmethod
+    def _pop_if_present(cls, target: dict[str, Any], key: str) -> Any:
+        if key not in target:
+            return cls._SENTINEL
+        return target.pop(key)
+
 
 LLM_TOOL_IMAGE_GENERATION = "生图工具"
 LLM_TOOL_PRESET_QUERY = "预设查询工具"
@@ -138,6 +466,8 @@ class ConfigManager:
 
     def load(self) -> PluginConfig:
         """加载并解析插件配置。"""
+        self._migrate_legacy_config()
+
         gen_cfg = self._get_config_section("generation")
         user_limits_cfg = self._get_config_section("user_limits")
         safety_cfg = self._get_config_section("safety_audit")
@@ -256,6 +586,15 @@ class ConfigManager:
         """重新加载配置。"""
         return self.load()
 
+    def _migrate_legacy_config(self) -> None:
+        """Migrate and persist known legacy config formats before parsing."""
+        changed, messages = ConfigCompatibility.migrate_config(self._config)
+        if not changed:
+            return
+
+        logger.info("[ImageGen] 已自动迁移旧配置: " + "; ".join(messages))
+        self._config.save_config()
+
     def _get_config_section(self, name: str) -> dict[str, Any]:
         """Return a dictionary config section, falling back to an empty dict."""
         value = self._config.get(name, {})
@@ -292,7 +631,8 @@ class ConfigManager:
         for provider_item in raw_providers:
             if not isinstance(provider_item, dict):
                 continue
-            if parsed := self._parse_provider_config(provider_item, gen_cfg):
+            normalized_item = self._compat_mapping("api_providers.*", provider_item)
+            if parsed := self._parse_provider_config(normalized_item, gen_cfg):
                 provider_configs.append(parsed)
         return provider_configs
 
@@ -338,7 +678,10 @@ class ConfigManager:
 
     def _parse_adapter_type(self, provider_item: dict[str, Any]) -> AdapterType | None:
         """Parse and validate the provider template key."""
-        adapter_type_str = str(provider_item.get("__template_key") or "").strip()
+        adapter_type_str = self._compat_value(
+            "api_providers.*.__template_key",
+            provider_item.get("__template_key") or "",
+        )
         if not adapter_type_str:
             return None
 
@@ -347,6 +690,17 @@ class ConfigManager:
         except ValueError:
             logger.warning(f"[ImageGen] 忽略未知适配器类型: {adapter_type_str}")
             return None
+
+    def _compat_value(self, path: str, value: Any) -> Any:
+        """Normalize a config value using centralized compatibility rules."""
+        normalized = ConfigCompatibility.normalize_value(path, value)
+        if normalized != value:
+            logger.info(f"[ImageGen] 兼容旧配置: {path} {value!r} -> {normalized!r}")
+        return normalized
+
+    def _compat_mapping(self, path: str, value: Mapping[str, Any]) -> dict[str, Any]:
+        """Normalize a config mapping using centralized compatibility rules."""
+        return ConfigCompatibility.normalize_mapping(path, value)
 
     def _get_provider_int_override(
         self,

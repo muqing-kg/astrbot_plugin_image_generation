@@ -4,3 +4,4 @@ adapter/__pycache__/
 dev/
 .vscode/
 .ruff_cache/
+data/
