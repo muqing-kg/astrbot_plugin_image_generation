@@ -265,6 +265,32 @@ async def _download_reference_images(
     return images_data
 
 
+def _deduplicate_reference_images(
+    images_data: list[tuple[bytes, str]],
+    *,
+    task_id: str | None = None,
+) -> list[tuple[bytes, str]]:
+    """Remove duplicate reference images before submitting a generation task."""
+    if len(images_data) < 2:
+        return images_data
+
+    unique_images: list[tuple[bytes, str]] = []
+    seen_hashes: set[str] = set()
+    duplicate_count = 0
+    for data, mime in images_data:
+        digest = hashlib.sha256(data).hexdigest()
+        if digest in seen_hashes:
+            duplicate_count += 1
+            continue
+        seen_hashes.add(digest)
+        unique_images.append((data, mime))
+
+    if duplicate_count:
+        task_log = log_prefix("LLMTool", task_id) if task_id else LOG
+        logger.info(f"{task_log} 已忽略 {duplicate_count} 张重复参考图")
+    return unique_images
+
+
 async def _collect_reference_images(
     plugin: Any,
     event: Any,
@@ -276,7 +302,7 @@ async def _collect_reference_images(
     persona_name: str | None = None,
     task_id: str | None = None,
 ) -> list[tuple[bytes, str]]:
-    """Collect explicit, persona, avatar, and message-context reference images."""
+    """Collect explicit persona, URL/path, and avatar reference images."""
     task_log = log_prefix("LLMTool", task_id) if task_id else LOG
     if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
         if reference_images or avatar_references or persona_image:
@@ -314,13 +340,7 @@ async def _collect_reference_images(
             images_data.append((avatar_data, "image/jpeg"))
             logger.info(f"{task_log} 已添加 {mask_sensitive(user_id)} 的头像作为参考图")
 
-    images_data.extend(
-        await plugin.image_processor.fetch_images_from_event(
-            event,
-            avatar_user_ids=avatar_user_ids,
-        )
-    )
-    return images_data
+    return _deduplicate_reference_images(images_data, task_id=task_id)
 
 
 async def _start_generation_task(
