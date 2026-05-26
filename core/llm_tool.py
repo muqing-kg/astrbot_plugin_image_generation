@@ -400,16 +400,17 @@ async def _start_generation_task(
         )
         images_data = []
 
-    plugin.create_background_task(
-        plugin._generate_and_send_image_async(
-            prompt=prompt,
-            images_data=images_data or None,
-            unified_msg_origin=event.unified_msg_origin,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            task_id=task_id,
-            is_usage_limit_admin=is_usage_limit_admin,
-        )
+    plugin.create_generation_task(
+        task_id=task_id,
+        source="LLM工具",
+        prompt=prompt,
+        images_data=images_data or None,
+        unified_msg_origin=event.unified_msg_origin,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        is_usage_limit_admin=is_usage_limit_admin,
+        preset=preset_or_persona,
+        preset_label=preset_label,
     )
 
     return plugin.format_start_task_message(

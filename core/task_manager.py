@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from astrbot.api import logger
@@ -12,6 +14,82 @@ from .logging_utils import log_prefix, safe_log_text
 
 
 LOG = log_prefix("TaskManager")
+DEFAULT_GENERATION_TASK_HISTORY_LIMIT = 100
+
+
+class GenerationTaskStatus(str, Enum):
+    """Lifecycle states for image generation tasks."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+
+
+ACTIVE_GENERATION_STATUSES = {
+    GenerationTaskStatus.QUEUED,
+    GenerationTaskStatus.RUNNING,
+    GenerationTaskStatus.CANCELLING,
+}
+
+GENERATION_TASK_STATUS_LABELS = {
+    GenerationTaskStatus.QUEUED: "排队中",
+    GenerationTaskStatus.RUNNING: "运行中",
+    GenerationTaskStatus.SUCCEEDED: "已完成",
+    GenerationTaskStatus.FAILED: "失败",
+    GenerationTaskStatus.CANCELLING: "取消中",
+    GenerationTaskStatus.CANCELLED: "已取消",
+}
+
+
+@dataclass
+class GenerationTaskRecord:
+    """In-memory metadata for one image generation task."""
+
+    task_id: str
+    source: str
+    unified_msg_origin: str
+    prompt_summary: str
+    reference_image_count: int
+    aspect_ratio: str
+    resolution: str
+    preset: str | None = None
+    preset_label: str = "预设"
+    status: GenerationTaskStatus = GenerationTaskStatus.QUEUED
+    created_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    message: str = "任务已提交"
+    error: str = ""
+    result_count: int = 0
+    result_paths: list[str] = field(default_factory=list)
+    task: asyncio.Task | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def is_active(self) -> bool:
+        """Return whether the task can still change state."""
+        return self.status in ACTIVE_GENERATION_STATUSES
+
+    @property
+    def status_label(self) -> str:
+        """Return a user-facing status label."""
+        return GENERATION_TASK_STATUS_LABELS.get(self.status, self.status.value)
+
+    @property
+    def duration_seconds(self) -> float | None:
+        """Return active execution duration, excluding queued time."""
+        if not self.started_at:
+            return None
+        end_time = self.finished_at or datetime.now()
+        return max(0.0, (end_time - self.started_at).total_seconds())
+
+    @property
+    def queued_seconds(self) -> float:
+        """Return time spent since creation."""
+        end_time = self.started_at or self.finished_at or datetime.now()
+        return max(0.0, (end_time - self.created_at).total_seconds())
 
 
 def _task_name(name: str) -> str:
@@ -20,26 +98,228 @@ def _task_name(name: str) -> str:
 
 
 class TaskManager:
-    """统一的任务管理器，管理插件的后台任务和定时任务。"""
+    """Unified task manager for background, scheduled, and generation tasks."""
 
-    def __init__(self):
+    def __init__(
+        self, generation_history_limit: int = DEFAULT_GENERATION_TASK_HISTORY_LIMIT
+    ):
         self.background_tasks: set[asyncio.Task] = set()
         self._loop_tasks: dict[str, asyncio.Task] = {}
         self._daily_tasks: dict[str, asyncio.Task] = {}
-        self._last_run_dates: dict[str, str] = {}  # 记录每日任务上次执行的日期
-        self._startup_tasks: list[Callable[[], Coroutine[Any, Any, Any]]] = []
+        self._last_run_dates: dict[str, str] = {}
+        self._startup_tasks: list[
+            tuple[str, Callable[[], Coroutine[Any, Any, Any]]]
+        ] = []
         self._startup_completed: bool = False
+        self._generation_tasks: dict[str, GenerationTaskRecord] = {}
+        self._generation_history_limit = max(1, generation_history_limit)
 
     def create_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
     ) -> asyncio.Task:
-        """创建一个普通的后台任务。"""
+        """Create a generic background task."""
         task = asyncio.create_task(coro)
         if name:
             task.set_name(name)
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
         return task
+
+    def create_generation_task(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        task_id: str,
+        source: str,
+        unified_msg_origin: str,
+        prompt: str,
+        reference_image_count: int,
+        aspect_ratio: str,
+        resolution: str,
+        preset: str | None = None,
+        preset_label: str = "预设",
+    ) -> GenerationTaskRecord:
+        """Create and track an image generation task."""
+        if task_id in self._generation_tasks:
+            logger.warning(f"{LOG} 生图任务 ID 冲突，覆盖旧记录: {_task_name(task_id)}")
+
+        record = GenerationTaskRecord(
+            task_id=task_id,
+            source=source,
+            unified_msg_origin=unified_msg_origin,
+            prompt_summary=safe_log_text(prompt, 80),
+            reference_image_count=reference_image_count,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            preset=preset,
+            preset_label=preset_label,
+        )
+        self._generation_tasks[task_id] = record
+        self._trim_generation_history()
+
+        task = asyncio.create_task(
+            self._run_generation_task(task_id, coro),
+            name=f"image_generation:{task_id}",
+        )
+        record.task = task
+        self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
+        task.add_done_callback(
+            functools.partial(self._on_generation_task_done, task_id)
+        )
+        logger.info(
+            f"{log_prefix('Task', task_id)} 已提交生图任务，来源: {safe_log_text(source)}"
+        )
+        return record
+
+    async def _run_generation_task(
+        self, task_id: str, coro: Coroutine[Any, Any, Any]
+    ) -> None:
+        """Run a tracked generation coroutine and close unhandled states."""
+        try:
+            await coro
+            record = self.get_generation_task(task_id)
+            if record and record.is_active:
+                self.mark_generation_task_succeeded(task_id, message="任务已完成")
+        except asyncio.CancelledError:
+            self.mark_generation_task_cancelled(task_id, "任务已取消")
+            raise
+        except Exception as exc:
+            self.mark_generation_task_failed(task_id, f"任务执行异常: {exc}")
+            logger.error(
+                f"{log_prefix('Task', task_id)} 生图任务执行异常: {exc}",
+                exc_info=True,
+            )
+
+    def _on_generation_task_done(self, task_id: str, task: asyncio.Task) -> None:
+        """Detach asyncio task references when a generation task finishes."""
+        if record := self._generation_tasks.get(task_id):
+            record.task = None
+
+    def mark_generation_task_running(self, task_id: str) -> None:
+        """Mark a generation task as actively running."""
+        record = self._generation_tasks.get(task_id)
+        if not record or record.status == GenerationTaskStatus.CANCELLING:
+            return
+        record.status = GenerationTaskStatus.RUNNING
+        record.started_at = record.started_at or datetime.now()
+        record.message = "任务运行中"
+
+    def mark_generation_task_succeeded(
+        self,
+        task_id: str,
+        *,
+        result_count: int = 0,
+        result_paths: list[str] | None = None,
+        message: str = "任务已完成",
+    ) -> None:
+        """Mark a generation task as successful."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return
+        record.status = GenerationTaskStatus.SUCCEEDED
+        record.finished_at = record.finished_at or datetime.now()
+        record.message = message
+        record.error = ""
+        record.result_count = result_count or record.result_count
+        if result_paths is not None:
+            record.result_paths = list(result_paths)
+
+    def mark_generation_task_failed(self, task_id: str, error: str) -> None:
+        """Mark a generation task as failed."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return
+        record.status = GenerationTaskStatus.FAILED
+        record.finished_at = record.finished_at or datetime.now()
+        record.error = safe_log_text(error, 300)
+        record.message = "任务失败"
+
+    def mark_generation_task_cancelled(
+        self, task_id: str, reason: str = "任务已取消"
+    ) -> None:
+        """Mark a generation task as cancelled."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return
+        record.status = GenerationTaskStatus.CANCELLED
+        record.finished_at = record.finished_at or datetime.now()
+        record.message = reason
+
+    def get_generation_task(self, task_id: str) -> GenerationTaskRecord | None:
+        """Return a tracked image generation task by id."""
+        return self._generation_tasks.get(task_id)
+
+    def list_generation_tasks(
+        self,
+        *,
+        unified_msg_origin: str | None = None,
+        include_finished: bool = True,
+        limit: int = 10,
+    ) -> list[GenerationTaskRecord]:
+        """List tracked generation tasks from newest to oldest."""
+        tasks = list(reversed(self._generation_tasks.values()))
+        if unified_msg_origin is not None:
+            tasks = [t for t in tasks if t.unified_msg_origin == unified_msg_origin]
+        if not include_finished:
+            tasks = [t for t in tasks if t.is_active]
+        return tasks[: max(1, limit)]
+
+    def cancel_generation_task(
+        self,
+        task_id: str,
+        *,
+        unified_msg_origin: str | None = None,
+    ) -> tuple[bool, str]:
+        """Request cancellation for one generation task."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return False, f"❌ 任务不存在: {task_id}"
+        if (
+            unified_msg_origin is not None
+            and record.unified_msg_origin != unified_msg_origin
+        ):
+            return False, "❌ 不能取消其他会话的生图任务"
+        if not record.is_active:
+            return False, f"❌ 任务已结束，当前状态: {record.status_label}"
+
+        record.status = GenerationTaskStatus.CANCELLING
+        record.message = "正在取消任务"
+        if record.task and not record.task.done():
+            record.task.cancel()
+            return True, f"✅ 已请求取消任务: {task_id}"
+
+        self.mark_generation_task_cancelled(task_id)
+        return True, f"✅ 任务已取消: {task_id}"
+
+    def cleanup_generation_tasks(self, *, unified_msg_origin: str | None = None) -> int:
+        """Remove finished generation task records."""
+        removed = 0
+        for task_id, record in list(self._generation_tasks.items()):
+            if record.is_active:
+                continue
+            if (
+                unified_msg_origin is not None
+                and record.unified_msg_origin != unified_msg_origin
+            ):
+                continue
+            del self._generation_tasks[task_id]
+            removed += 1
+        return removed
+
+    def _trim_generation_history(self) -> None:
+        """Keep finished task history bounded while preserving active tasks."""
+        overflow = len(self._generation_tasks) - self._generation_history_limit
+        if overflow <= 0:
+            return
+
+        for task_id, record in list(self._generation_tasks.items()):
+            if overflow <= 0:
+                break
+            if record.is_active:
+                continue
+            del self._generation_tasks[task_id]
+            overflow -= 1
 
     def start_loop_task(
         self,

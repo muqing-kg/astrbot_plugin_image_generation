@@ -28,6 +28,7 @@ from .core.config_manager import (
     RESULT_INFO_COUNT,
     RESULT_INFO_DURATION,
     RESULT_INFO_MODEL,
+    RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
 from .core.generator import ImageGenerator
@@ -41,7 +42,7 @@ from .core.llm_tool import (
 from .core.constants import UNSPECIFIED_OPTION
 from .core.logging_utils import log_prefix, mask_sensitive, safe_log_text
 from .core.safety_auditor import SafetyAuditor
-from .core.task_manager import TaskManager
+from .core.task_manager import GenerationTaskRecord, TaskManager
 from .core.types import GenerationRequest, ImageCapability, ImageData
 from .core.usage_manager import UsageManager
 from .core.utils import validate_aspect_ratio, validate_resolution
@@ -205,9 +206,47 @@ class ImageGenerationPlugin(Star):
         elif isinstance(props.get("persona"), dict):
             props["persona"]["enum"] = list(self.config_manager.personas)
 
-    def create_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+    def create_background_task(
+        self, coro: Coroutine[Any, Any, Any], name: str | None = None
+    ) -> asyncio.Task:
         """创建后台任务并添加到管理器中。"""
-        return self.task_manager.create_task(coro)
+        return self.task_manager.create_task(coro, name=name)
+
+    def create_generation_task(
+        self,
+        *,
+        task_id: str,
+        source: str,
+        prompt: str,
+        images_data: list[tuple[bytes, str]] | None,
+        unified_msg_origin: str,
+        aspect_ratio: str,
+        resolution: str,
+        is_usage_limit_admin: bool,
+        preset: str | None = None,
+        preset_label: str = "预设",
+    ) -> GenerationTaskRecord:
+        """Create and track an image generation task in the unified task manager."""
+        return self.task_manager.create_generation_task(
+            self._generate_and_send_image_async(
+                prompt=prompt,
+                images_data=images_data or None,
+                unified_msg_origin=unified_msg_origin,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                task_id=task_id,
+                is_usage_limit_admin=is_usage_limit_admin,
+            ),
+            task_id=task_id,
+            source=source,
+            unified_msg_origin=unified_msg_origin,
+            prompt=prompt,
+            reference_image_count=len(images_data or []),
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            preset=preset,
+            preset_label=preset_label,
+        )
 
     def is_usage_limit_admin(self, event: AstrMessageEvent) -> bool:
         """Return whether an event sender is an AstrBot admin for usage limits."""
@@ -273,6 +312,73 @@ class ImageGenerationPlugin(Star):
                 values
             )
 
+    def format_task_detail(self, record: GenerationTaskRecord) -> str:
+        """Format one task record for command output."""
+        lines = [f"🧾 任务 {record.task_id}: {record.status_label}"]
+        lines.append(f"来源: {record.source}")
+        lines.append(f"提示词: {record.prompt_summary or '无'}")
+        lines.append(f"参考图: {record.reference_image_count}张")
+        lines.append(f"宽高比: {record.aspect_ratio}，分辨率: {record.resolution}")
+        if record.preset:
+            lines.append(f"{record.preset_label}: {record.preset}")
+
+        if record.started_at:
+            duration = record.duration_seconds
+            if duration is not None:
+                lines.append(f"耗时: {duration:.2f}s")
+        else:
+            lines.append(f"排队: {record.queued_seconds:.2f}s")
+
+        if record.result_count:
+            lines.append(f"结果: {record.result_count}张")
+        if record.error:
+            lines.append(f"错误: {record.error}")
+        elif record.message:
+            lines.append(f"说明: {record.message}")
+        return "\n".join(lines)
+
+    def format_task_list(self, records: list[GenerationTaskRecord]) -> str:
+        """Format a compact task list for command output."""
+        if not records:
+            return "📭 当前没有正在进行的生图任务"
+
+        lines = ["📋 正在进行的生图任务:"]
+        for index, record in enumerate(records, 1):
+            parts = [
+                f"{record.task_id}",
+                record.status_label,
+                record.source,
+                f"参考图{record.reference_image_count}张",
+            ]
+            lines.append(f"{index}. " + " | ".join(parts))
+        lines.append(
+            "\n用法: /生图任务 <编号或任务ID> 查看详情，/生图取消 <编号或任务ID> 取消任务"
+        )
+        return "\n".join(lines)
+
+    def resolve_active_task_reference(
+        self, unified_msg_origin: str, task_ref: str
+    ) -> GenerationTaskRecord | None:
+        """Resolve a task id or list number into an active task for one session."""
+        task_ref = task_ref.strip()
+        if not task_ref:
+            return None
+
+        active_records = self.task_manager.list_generation_tasks(
+            unified_msg_origin=unified_msg_origin,
+            include_finished=False,
+            limit=10,
+        )
+        if task_ref.isdigit():
+            index = int(task_ref) - 1
+            if 0 <= index < len(active_records):
+                return active_records[index]
+
+        for record in active_records:
+            if record.task_id == task_ref:
+                return record
+        return None
+
     # ---------------------- 核心生图逻辑 ----------------------
 
     async def _generate_and_send_image_async(
@@ -287,6 +393,10 @@ class ImageGenerationPlugin(Star):
     ) -> None:
         """异步生成图片并发送。"""
         if not self.generator or not self.generator.adapter:
+            if task_id:
+                self.task_manager.mark_generation_task_failed(
+                    task_id, "生图生成器未初始化"
+                )
             return
 
         if not task_id:
@@ -371,8 +481,10 @@ class ImageGenerationPlugin(Star):
         """执行生成逻辑并发送结果。"""
         start_time = time.time()
         task_log = log_prefix("Task", task_id)
+        self.task_manager.mark_generation_task_running(task_id)
         if not self.generator:
             logger.warning(f"{task_log} 生成器未初始化，跳过生成请求")
+            self.task_manager.mark_generation_task_failed(task_id, "生图生成器未初始化")
             return
         result = await self.generator.generate(
             GenerationRequest(
@@ -390,6 +502,7 @@ class ImageGenerationPlugin(Star):
             logger.error(
                 f"{task_log} 生成失败，耗时: {duration:.2f}s, 错误: {safe_log_text(result.error, 200)}"
             )
+            self.task_manager.mark_generation_task_failed(task_id, result.error)
             await self.context.send_message(
                 unified_msg_origin,
                 MessageChain().message(f"❌ 生成失败: {result.error}"),
@@ -401,6 +514,7 @@ class ImageGenerationPlugin(Star):
         )
 
         if not result.images:
+            self.task_manager.mark_generation_task_failed(task_id, "模型未返回图片")
             return
 
         generated_file_paths: list[str] = []
@@ -411,6 +525,9 @@ class ImageGenerationPlugin(Star):
 
         if not generated_file_paths:
             logger.warning(f"{task_log} 未能保存任何生成图片")
+            self.task_manager.mark_generation_task_failed(
+                task_id, "未能保存任何生成图片"
+            )
             return
 
         # 生图后图片审核
@@ -423,11 +540,22 @@ class ImageGenerationPlugin(Star):
             logger.warning(
                 f"{task_log} 图片审核未通过: {safe_log_text(image_reason, 200)}"
             )
+            self.task_manager.mark_generation_task_failed(
+                task_id,
+                f"图片内容审核未通过: {image_reason}",
+            )
             await self.context.send_message(
                 unified_msg_origin,
                 MessageChain().message(f"❌ 图片内容审核未通过: {image_reason}"),
             )
             return
+
+        self.task_manager.mark_generation_task_succeeded(
+            task_id,
+            result_count=len(generated_file_paths),
+            result_paths=generated_file_paths,
+            message="图片已发送",
+        )
 
         # 记录使用次数
         self.usage_manager.record_usage(
@@ -454,6 +582,9 @@ class ImageGenerationPlugin(Star):
         if self.config_manager.should_show_result_info(RESULT_INFO_COUNT):
             info_parts.append(f"🖼️ 数量: {len(generated_file_paths)}张")
 
+        if self.config_manager.should_show_result_info(RESULT_INFO_TASK_ID):
+            info_parts.append(f"🧾 任务ID: {task_id}")
+
         if (
             self.config_manager.should_show_result_info(RESULT_INFO_USAGE)
             and self.usage_manager.is_daily_limit_enabled()
@@ -475,6 +606,60 @@ class ImageGenerationPlugin(Star):
         await self.context.send_message(unified_msg_origin, chain)
 
     # ---------------------- 指令处理 ----------------------
+
+    @filter.command("生图任务")
+    async def image_task_command(self, event: AstrMessageEvent, task_id: str = ""):
+        """查看生图任务列表或指定任务详情。"""
+        user_id = event.unified_msg_origin
+        task_id = (task_id or "").strip()
+
+        if task_id:
+            record = self.resolve_active_task_reference(user_id, task_id)
+            if not record:
+                yield event.plain_result(f"❌ 正在进行的任务不存在: {task_id}")
+                return
+            if record.unified_msg_origin != user_id and not self.is_usage_limit_admin(
+                event
+            ):
+                yield event.plain_result("❌ 不能查看其他会话的生图任务")
+                return
+            yield event.plain_result(self.format_task_detail(record))
+            return
+
+        records = self.task_manager.list_generation_tasks(
+            unified_msg_origin=user_id,
+            include_finished=False,
+            limit=10,
+        )
+        yield event.plain_result(self.format_task_list(records))
+
+    @filter.command("生图取消")
+    async def cancel_image_task_command(
+        self, event: AstrMessageEvent, task_id: str = ""
+    ):
+        """取消指定生图任务。"""
+        task_id = (task_id or "").strip()
+        if not task_id:
+            active_records = self.task_manager.list_generation_tasks(
+                unified_msg_origin=event.unified_msg_origin,
+                include_finished=False,
+                limit=5,
+            )
+            if active_records:
+                yield event.plain_result(
+                    "❌ 请提供要取消的任务ID\n" + self.format_task_list(active_records)
+                )
+            else:
+                yield event.plain_result("📭 当前没有可取消的生图任务")
+            return
+
+        record = self.resolve_active_task_reference(event.unified_msg_origin, task_id)
+        if not record:
+            yield event.plain_result(f"❌ 正在进行的任务不存在: {task_id}")
+            return
+
+        _, message = self.task_manager.cancel_generation_task(record.task_id)
+        yield event.plain_result(message)
 
     @filter.command("生图")
     async def generate_image_command(self, event: AstrMessageEvent):
@@ -609,16 +794,17 @@ class ImageGenerationPlugin(Star):
         if msg:
             yield event.plain_result(msg)
 
-        self.create_background_task(
-            self._generate_and_send_image_async(
-                prompt=prompt,
-                images_data=images_data or None,
-                unified_msg_origin=event.unified_msg_origin,
-                aspect_ratio=aspect_ratio,
-                resolution=resolution,
-                task_id=task_id,
-                is_usage_limit_admin=is_usage_limit_admin,
-            )
+        self.create_generation_task(
+            task_id=task_id,
+            source="指令",
+            prompt=prompt,
+            images_data=images_data or None,
+            unified_msg_origin=event.unified_msg_origin,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            is_usage_limit_admin=is_usage_limit_admin,
+            preset=matched_preset or matched_persona,
+            preset_label="人设" if matched_persona else "预设",
         )
 
     @filter.command("生图模型")

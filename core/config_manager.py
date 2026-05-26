@@ -32,6 +32,7 @@ from .config_defaults import (
     RESULT_INFO_COUNT,
     RESULT_INFO_DURATION,
     RESULT_INFO_MODEL,
+    RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
 from .config_migrator import ConfigMigrator
@@ -52,6 +53,7 @@ __all__ = (
     "RESULT_INFO_COUNT",
     "RESULT_INFO_DURATION",
     "RESULT_INFO_MODEL",
+    "RESULT_INFO_TASK_ID",
     "RESULT_INFO_USAGE",
     "SafetyAuditSettings",
     "UsageSettings",
