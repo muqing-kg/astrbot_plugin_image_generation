@@ -66,6 +66,45 @@ def _normalize_string_items(raw: Any) -> list[str]:
     return [item] if item else []
 
 
+def _normalize_name_items(raw: Any) -> list[str]:
+    """Normalize one or many preset/persona names from tool arguments."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in _normalize_string_items(raw):
+        for name in item.split():
+            normalized = name.strip()
+            if not normalized:
+                continue
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            names.append(normalized)
+    return names
+
+
+def _format_template_summary(
+    matched_presets: list[str],
+    matched_personas: list[str],
+) -> tuple[str | None, str]:
+    """Format matched preset/persona names for task metadata."""
+    if matched_presets and matched_personas:
+        return (
+            "；".join(
+                (
+                    f"预设: {'、'.join(matched_presets)}",
+                    f"人设: {'、'.join(matched_personas)}",
+                )
+            ),
+            "预设/人设",
+        )
+    if matched_presets:
+        return "、".join(matched_presets), "预设"
+    if matched_personas:
+        return "、".join(matched_personas), "人设"
+    return None, "预设"
+
+
 def _normalize_preset_query_category(category: str) -> str:
     """Normalize preset query category aliases."""
     normalized = category.strip().lower()
@@ -165,62 +204,80 @@ def _validate_preset_content(content: str) -> str | None:
 
 def _parse_preset(
     plugin: Any,
-    preset_name: str,
+    preset_names: Any,
     prompt: str,
     aspect_ratio: Any,
     resolution: Any,
-) -> tuple[str, str, str, str | None, str | None]:
-    """Apply preset prompt and optional generation overrides."""
-    if not preset_name:
-        return str(prompt).strip(), str(aspect_ratio), str(resolution), None, None
+) -> tuple[str, str, str, list[str], str | None]:
+    """Apply one or more preset prompts and optional generation overrides."""
+    names = _normalize_name_items(preset_names)
+    if not names:
+        return str(prompt).strip(), str(aspect_ratio), str(resolution), [], None
 
-    matched_preset = plugin._find_named_entry(
-        plugin.config_manager.presets, preset_name
-    )
-    if not matched_preset:
-        return (
-            "",
-            str(aspect_ratio),
-            str(resolution),
-            None,
-            f"❌ 预设不存在: {preset_name}",
+    prompt_parts: list[str] = []
+    matched_presets: list[str] = []
+    for preset_name in names:
+        matched_preset = plugin._find_named_entry(
+            plugin.config_manager.presets, preset_name
         )
+        if not matched_preset:
+            return "", str(aspect_ratio), str(resolution), [], f"❌ 预设不存在: {preset_name}"
 
-    preset_content = plugin.config_manager.presets[matched_preset]
-    preset_prompt = str(preset_content or "").strip()
-    if preset_prompt.startswith("{"):
-        try:
-            preset_data = json.loads(preset_prompt)
-            if isinstance(preset_data, dict):
-                preset_prompt = str(preset_data.get("prompt", "")).strip()
-                aspect_ratio = str(preset_data.get("aspect_ratio") or aspect_ratio)
-                resolution = str(preset_data.get("resolution") or resolution)
-        except json.JSONDecodeError:
-            pass
+        preset_content = plugin.config_manager.presets[matched_preset]
+        preset_prompt = str(preset_content or "").strip()
+        if preset_prompt.startswith("{"):
+            try:
+                preset_data = json.loads(preset_prompt)
+                if isinstance(preset_data, dict):
+                    preset_prompt = str(preset_data.get("prompt", "") or "").strip()
+                    aspect_ratio = str(preset_data.get("aspect_ratio") or aspect_ratio)
+                    resolution = str(preset_data.get("resolution") or resolution)
+            except json.JSONDecodeError:
+                pass
 
-    final_prompt = f"{preset_prompt} {prompt}".strip()
-    return final_prompt, str(aspect_ratio), str(resolution), matched_preset, None
+        if preset_prompt:
+            prompt_parts.append(preset_prompt)
+        matched_presets.append(matched_preset)
+
+    if prompt := str(prompt).strip():
+        prompt_parts.append(prompt)
+    final_prompt = " ".join(prompt_parts).strip()
+    return final_prompt, str(aspect_ratio), str(resolution), matched_presets, None
 
 
 def _parse_persona(
     plugin: Any,
-    persona_name: str,
+    persona_names: Any,
     prompt: str,
-) -> tuple[str, str, str | None, str | None]:
-    """Apply persona prompt and reference image."""
-    if not persona_name:
-        return str(prompt).strip(), "", None, None
+) -> tuple[str, list[tuple[str, str]], list[str], str | None]:
+    """Apply one or more persona prompts and reference images."""
+    names = _normalize_name_items(persona_names)
+    if not names:
+        return str(prompt).strip(), [], [], None
 
-    matched_persona = plugin._find_named_entry(
-        plugin.config_manager.personas,
-        persona_name,
-    )
-    if not matched_persona:
-        return "", "", None, f"❌ 人设不存在: {persona_name}"
+    prompt_parts: list[str] = []
+    persona_images: list[tuple[str, str]] = []
+    matched_personas: list[str] = []
+    for persona_name in names:
+        matched_persona = plugin._find_named_entry(
+            plugin.config_manager.personas,
+            persona_name,
+        )
+        if not matched_persona:
+            return "", [], [], f"❌ 人设不存在: {persona_name}"
 
-    persona = plugin.config_manager.personas[matched_persona]
-    final_prompt = f"{persona.prompt} {prompt}".strip()
-    return final_prompt, persona.image, matched_persona, None
+        persona = plugin.config_manager.personas[matched_persona]
+        persona_prompt = persona.prompt.strip()
+        if persona_prompt:
+            prompt_parts.append(persona_prompt)
+        if persona.image:
+            persona_images.append((matched_persona, persona.image))
+        matched_personas.append(matched_persona)
+
+    if prompt := str(prompt).strip():
+        prompt_parts.append(prompt)
+    final_prompt = " ".join(prompt_parts).strip()
+    return final_prompt, persona_images, matched_personas, None
 
 
 def _resolve_avatar_user_id(event: Any, ref: str) -> str | None:
@@ -285,28 +342,16 @@ def _deduplicate_reference_images(
     return unique_images
 
 
-async def _collect_reference_images(
+async def _collect_reference_images_from_personas(
     plugin: Any,
-    event: Any,
+    persona_images: list[tuple[str, str]],
     *,
-    capabilities: ImageCapability,
-    reference_images: Any = None,
-    avatar_references: Any = None,
-    persona_image: str = "",
-    persona_name: str | None = None,
     task_id: str | None = None,
 ) -> list[tuple[bytes, str]]:
-    """Collect explicit persona, URL/path, and avatar reference images."""
-    task_log = log_prefix("LLMTool", task_id) if task_id else LOG
-    if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
-        if reference_images or avatar_references or persona_image:
-            logger.warning(f"{task_log} 当前适配器不支持参考图，已忽略工具参考图参数")
-        return []
-
+    """Download all configured persona reference images."""
     images_data: list[tuple[bytes, str]] = []
-    avatar_user_ids: set[str] = set()
-
-    if persona_image:
+    task_log = log_prefix("LLMTool", task_id) if task_id else LOG
+    for persona_name, persona_image in persona_images:
         if persona_image_data := await plugin.image_processor.download_image(
             persona_image
         ):
@@ -315,6 +360,37 @@ async def _collect_reference_images(
             logger.warning(
                 f"{task_log} 人设参考图获取失败: {safe_log_text(persona_name)}"
             )
+    return images_data
+
+
+async def _collect_reference_images(
+    plugin: Any,
+    event: Any,
+    *,
+    capabilities: ImageCapability,
+    reference_images: Any = None,
+    avatar_references: Any = None,
+    persona_images: list[tuple[str, str]] | None = None,
+    task_id: str | None = None,
+) -> list[tuple[bytes, str]]:
+    """Collect explicit persona, URL/path, and avatar reference images."""
+    task_log = log_prefix("LLMTool", task_id) if task_id else LOG
+    if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
+        if reference_images or avatar_references or persona_images:
+            logger.warning(f"{task_log} 当前适配器不支持参考图，已忽略工具参考图参数")
+        return []
+
+    images_data: list[tuple[bytes, str]] = []
+    avatar_user_ids: set[str] = set()
+
+    if persona_images:
+        images_data.extend(
+            await _collect_reference_images_from_personas(
+                plugin,
+                persona_images,
+                task_id=task_id,
+            )
+        )
 
     images_data.extend(
         await _download_reference_images(
@@ -348,10 +424,11 @@ async def _start_generation_task(
     resolution: str,
     reference_images: Any = None,
     avatar_references: Any = None,
-    persona_image: str = "",
+    persona_images: list[tuple[str, str]] | None = None,
     preset_or_persona: str | None = None,
-    persona_name: str | None = None,
     preset_label: str = "预设",
+    presets: list[str] | None = None,
+    personas: list[str] | None = None,
 ) -> ToolExecResult:
     """Validate request, collect references, and schedule image generation."""
     if not plugin.generator or not plugin.generator.adapter:
@@ -396,8 +473,7 @@ async def _start_generation_task(
             capabilities=plugin.generator.adapter.get_capabilities(),
             reference_images=reference_images,
             avatar_references=avatar_references,
-            persona_image=persona_image,
-            persona_name=persona_name,
+            persona_images=persona_images,
             task_id=task_id,
         )
     except Exception as exc:
@@ -418,6 +494,8 @@ async def _start_generation_task(
         is_usage_limit_admin=is_usage_limit_admin,
         preset=preset_or_persona,
         preset_label=preset_label,
+        presets=presets,
+        personas=personas,
     )
 
     return plugin.format_start_task_message(
@@ -425,6 +503,8 @@ async def _start_generation_task(
         reference_image_count=len(images_data),
         preset=preset_or_persona,
         preset_label=preset_label,
+        presets=presets,
+        personas=personas,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         task_id=task_id,
@@ -437,7 +517,7 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
 
     name: str = "generate_image"
     description: str = (
-        "使用生图模型生成或修改图片；支持普通生图、预设、自拍、人像、头像和人设照片。"
+        "使用生图模型生成或修改图片；支持普通生图、多预设、自拍、人像、头像和多个人设照片。"
         "当用户要求自拍/头像/人像/某个人设或角色出镜时，应优先填写 persona。"
     )
     parameters: dict = Field(
@@ -446,19 +526,19 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "生图时使用的提示词。设置 preset 或 persona 时可填写额外提示词，也可留空。",
+                    "description": "生图时使用的额外提示词。设置 preset 或 persona 时可留空。",
                 },
                 "preset": {
                     "type": "string",
-                    "description": "可选。使用已配置的预设名称，会将预设提示词作为基础提示词，并可继承预设中的宽高比和分辨率。",
+                    "description": "可选。使用一个或多个已配置的预设名称，多个名称可用空格分隔；会按顺序拼接预设提示词，并可继承预设中的宽高比和分辨率。",
                 },
                 "persona": {
                     "type": "string",
-                    "description": "可选。使用已配置的人设名称。当用户要求自拍、头像、人像、人设照片或某角色出镜时优先填写；会拼接人设描述，并在支持图生图时加入人设参考图。",
+                    "description": "可选。使用一个或多个已配置的人设名称，多个名称可用空格分隔。当用户要求自拍、头像、人像、人设照片或某角色出镜时优先填写；会按顺序拼接人设描述，并在支持图生图时加入人设参考图。",
                 },
                 "aspect_ratio": {
                     "type": "string",
-                    "description": "图片宽高比。如果不确定，请使用'不指定'；填写 persona 且未指定时默认按自拍/人像使用 9:16。",
+                    "description": "图片宽高比。如果不确定，请使用'不指定'。",
                     "enum": ASPECT_RATIO_OPTIONS,
                     "default": "不指定",
                 },
@@ -500,35 +580,29 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
             kwargs.get("resolution") or plugin.config_manager.default_resolution
         )
 
-        prompt, aspect_ratio, resolution, matched_preset, error = _parse_preset(
+        prompt, aspect_ratio, resolution, matched_presets, error = _parse_preset(
             plugin,
-            str(kwargs.get("preset", "") or "").strip(),
+            kwargs.get("preset"),
             prompt,
             aspect_ratio,
             resolution,
         )
         if error:
             return error
-        prompt, persona_image, matched_persona, error = _parse_persona(
+        prompt, persona_images, matched_personas, error = _parse_persona(
             plugin,
-            str(kwargs.get("persona", "") or "").strip(),
+            kwargs.get("persona"),
             prompt,
         )
         if error:
             return error
-        if matched_persona and not raw_aspect_ratio:
-            aspect_ratio = "9:16"
         if not prompt:
             return "❌ 请提供图片生成的提示词、预设或人设"
 
-        preset_or_persona = matched_preset
-        preset_label = "预设"
-        if matched_preset and matched_persona:
-            preset_or_persona = f"{matched_preset} / {matched_persona}"
-            preset_label = "预设/人设"
-        elif matched_persona:
-            preset_or_persona = matched_persona
-            preset_label = "人设"
+        preset_or_persona, preset_label = _format_template_summary(
+            matched_presets,
+            matched_personas,
+        )
 
         event = _extract_event(context)
         if not event:
@@ -543,10 +617,11 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
             resolution=str(resolution),
             reference_images=kwargs.get("reference_images"),
             avatar_references=kwargs.get("avatar_references"),
-            persona_image=persona_image,
+            persona_images=persona_images,
             preset_or_persona=preset_or_persona,
-            persona_name=matched_persona,
             preset_label=preset_label,
+            presets=matched_presets,
+            personas=matched_personas,
         )
 
 

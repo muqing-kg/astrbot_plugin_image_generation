@@ -214,7 +214,12 @@ class ImageGenerationPlugin(Star):
         if not self.config_manager.personas:
             props.pop("persona", None)
         elif isinstance(props.get("persona"), dict):
-            props["persona"]["enum"] = list(self.config_manager.personas)
+            props["persona"].pop("enum", None)
+            if persona_names := "、".join(self.config_manager.personas):
+                props["persona"]["description"] = (
+                    str(props["persona"].get("description", "")).rstrip("。")
+                    + f"。可用人设: {persona_names}；多个名称可用空格分隔。"
+                )
 
     def create_background_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
@@ -235,8 +240,15 @@ class ImageGenerationPlugin(Star):
         is_usage_limit_admin: bool,
         preset: str | None = None,
         preset_label: str = "预设",
+        presets: list[str] | None = None,
+        personas: list[str] | None = None,
     ) -> GenerationTaskRecord:
         """Create and track an image generation task in the unified task manager."""
+        if preset is None:
+            preset, preset_label = self._format_template_summary(
+                presets or [],
+                personas or [],
+            )
         return self.task_manager.create_generation_task(
             self._generate_and_send_image_async(
                 prompt=prompt,
@@ -276,6 +288,136 @@ class ImageGenerationPlugin(Star):
                 return name
         return None
 
+    def _parse_preset_prompt(
+        self,
+        preset_content: Any,
+        aspect_ratio: str,
+        resolution: str,
+    ) -> tuple[str, str, str]:
+        """Parse a preset prompt and optional generation overrides."""
+        preset_prompt = str(preset_content or "").strip()
+        if not preset_prompt.startswith("{"):
+            return preset_prompt, aspect_ratio, resolution
+
+        try:
+            preset_data = json.loads(preset_prompt)
+        except json.JSONDecodeError:
+            return preset_prompt, aspect_ratio, resolution
+
+        if not isinstance(preset_data, dict):
+            return preset_prompt, aspect_ratio, resolution
+
+        preset_prompt = str(preset_data.get("prompt", "") or "").strip()
+        aspect_ratio = str(preset_data.get("aspect_ratio") or aspect_ratio)
+        resolution = str(preset_data.get("resolution") or resolution)
+        return preset_prompt, aspect_ratio, resolution
+
+    def _parse_command_prompt_templates(
+        self,
+        prompt: str,
+        aspect_ratio: str,
+        resolution: str,
+    ) -> tuple[str, str, str, list[str], list[str], list[tuple[str, str]]]:
+        """Apply leading space-separated preset/persona names to a command prompt."""
+        raw_prompt = prompt.strip()
+        if not raw_prompt:
+            return "", aspect_ratio, resolution, [], [], []
+
+        tokens = raw_prompt.split()
+        prompt_parts: list[str] = []
+        matched_presets: list[str] = []
+        matched_personas: list[str] = []
+        persona_images: list[tuple[str, str]] = []
+        extra_content = ""
+
+        for index, token in enumerate(tokens):
+            matched_preset = self._find_named_entry(
+                self.config_manager.presets, token
+            )
+            if matched_preset:
+                preset_prompt, aspect_ratio, resolution = self._parse_preset_prompt(
+                    self.config_manager.presets[matched_preset],
+                    aspect_ratio,
+                    resolution,
+                )
+                if preset_prompt:
+                    prompt_parts.append(preset_prompt)
+                matched_presets.append(matched_preset)
+                continue
+
+            matched_persona = self._find_named_entry(
+                self.config_manager.personas, token
+            )
+            if matched_persona:
+                persona = self.config_manager.personas[matched_persona]
+                persona_prompt = persona.prompt.strip()
+                if persona_prompt:
+                    prompt_parts.append(persona_prompt)
+                if persona.image:
+                    persona_images.append((matched_persona, persona.image))
+                matched_personas.append(matched_persona)
+                continue
+
+            extra_content = " ".join(tokens[index:]).strip()
+            break
+
+        if not matched_presets and not matched_personas:
+            return raw_prompt, aspect_ratio, resolution, [], [], []
+
+        if extra_content:
+            prompt_parts.append(extra_content)
+
+        return (
+            " ".join(part for part in prompt_parts if part).strip(),
+            aspect_ratio,
+            resolution,
+            matched_presets,
+            matched_personas,
+            persona_images,
+        )
+
+    def _format_template_summary(
+        self,
+        matched_presets: list[str],
+        matched_personas: list[str],
+    ) -> tuple[str | None, str]:
+        """Format matched preset/persona names for task metadata."""
+        if matched_presets and matched_personas:
+            return (
+                "；".join(
+                    (
+                        f"预设: {'、'.join(matched_presets)}",
+                        f"人设: {'、'.join(matched_personas)}",
+                    )
+                ),
+                "预设/人设",
+            )
+        if matched_presets:
+            return "、".join(matched_presets), "预设"
+        if matched_personas:
+            return "、".join(matched_personas), "人设"
+        return None, "预设"
+
+    def _format_start_template_values(
+        self,
+        *,
+        preset: str | None,
+        preset_label: str,
+        presets: list[str] | None,
+        personas: list[str] | None,
+    ) -> dict[str, str]:
+        """Build preset/persona placeholder values for the start-task template."""
+        preset_names = "、".join(presets or [])
+        persona_names = "、".join(personas or [])
+        return {
+            "preset": preset_names or (preset or ""),
+            "presets": preset_names,
+            "persona": persona_names,
+            "personas": persona_names,
+            "preset_block": f"[预设: {preset_names}]" if preset_names else "",
+            "persona_block": f"[人设: {persona_names}]" if persona_names else "",
+        }
+
     def format_start_task_message(
         self,
         *,
@@ -283,6 +425,8 @@ class ImageGenerationPlugin(Star):
         reference_image_count: int,
         preset: str | None,
         preset_label: str = "预设",
+        presets: list[str] | None = None,
+        personas: list[str] | None = None,
         aspect_ratio: str,
         resolution: str,
         task_id: str,
@@ -302,7 +446,6 @@ class ImageGenerationPlugin(Star):
         values = _SafeFormatDict(
             reference_image_count=str(reference_image_count),
             prompt=prompt,
-            preset=preset or "",
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             task_id=task_id,
@@ -311,16 +454,22 @@ class ImageGenerationPlugin(Star):
             reference_images_block=(
                 f"[{reference_image_count}张参考图]" if reference_image_count else ""
             ),
-            preset_block=f"[{preset_label}: {preset}]" if preset else "",
+            **self._format_start_template_values(
+                preset=preset,
+                preset_label=preset_label,
+                presets=presets,
+                personas=personas,
+            ),
         )
 
         try:
             return template.format_map(values)
         except Exception as exc:
             logger.warning(f"{LOG} 开始任务提示模板格式化失败: {exc}")
-            return "已开始生图任务{reference_images_block}{preset_block}".format_map(
-                values
-            )
+            return (
+                "已开始生图任务{reference_images_block}{preset_block}"
+                "{persona_block} [任务ID: {task_id}]"
+            ).format_map(values)
 
     def format_task_detail(self, record: GenerationTaskRecord) -> str:
         """Format one task record for command output."""
@@ -715,56 +864,18 @@ class ImageGenerationPlugin(Star):
         prompt = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
         aspect_ratio = self.config_manager.default_aspect_ratio
         resolution = self.config_manager.default_resolution
-
-        # 检查是否命中预设
-        matched_preset = None
-        matched_persona = None
-        persona_image = ""
-        extra_content = ""
-        if prompt:
-            parts = prompt.split(maxsplit=1)
-            first_token = parts[0]
-            rest = parts[1] if len(parts) > 1 else ""
-            matched_preset = self._find_named_entry(
-                self.config_manager.presets, first_token
-            )
-            if matched_preset:
-                extra_content = rest
-            else:
-                matched_persona = self._find_named_entry(
-                    self.config_manager.personas, first_token
-                )
-                if matched_persona:
-                    extra_content = rest
-
-        if matched_preset:
-            preset_content = self.config_manager.presets[matched_preset]
-            try:
-                # 预设支持 JSON 格式配置高级参数
-                if isinstance(
-                    preset_content, str
-                ) and preset_content.strip().startswith("{"):
-                    preset_data = json.loads(preset_content)
-                    if isinstance(preset_data, dict):
-                        prompt = preset_data.get("prompt", "")
-                        aspect_ratio = preset_data.get("aspect_ratio", aspect_ratio)
-                        resolution = preset_data.get("resolution", resolution)
-                    else:
-                        prompt = preset_content
-                else:
-                    prompt = preset_content
-            except json.JSONDecodeError:
-                prompt = preset_content
-
-            if extra_content:
-                prompt = f"{prompt} {extra_content}"
-
-        if matched_persona:
-            persona = self.config_manager.personas[matched_persona]
-            prompt = persona.prompt
-            persona_image = persona.image
-            if extra_content:
-                prompt = f"{prompt} {extra_content}".strip()
+        (
+            prompt,
+            aspect_ratio,
+            resolution,
+            matched_presets,
+            matched_personas,
+            persona_images,
+        ) = self._parse_command_prompt_templates(prompt, aspect_ratio, resolution)
+        preset_or_persona, preset_label = self._format_template_summary(
+            matched_presets,
+            matched_personas,
+        )
 
         if not prompt:
             yield event.plain_result("❌ 请提供图片生成的提示词或预设名称！")
@@ -794,14 +905,14 @@ class ImageGenerationPlugin(Star):
             )
         ):
             images_data = []
-            if persona_image:
+            for persona_name, persona_image in persona_images:
                 if persona_image_data := await self.image_processor.download_image(
                     persona_image
                 ):
                     images_data.append(persona_image_data)
                 else:
                     logger.warning(
-                        f"{task_log} 人设参考图获取失败: {safe_log_text(matched_persona)}"
+                        f"{task_log} 人设参考图获取失败: {safe_log_text(persona_name)}"
                     )
             images_data.extend(
                 await self.image_processor.fetch_images_from_event(event)
@@ -810,8 +921,10 @@ class ImageGenerationPlugin(Star):
         msg = self.format_start_task_message(
             prompt=prompt,
             reference_image_count=len(images_data or []),
-            preset=matched_preset or matched_persona,
-            preset_label="人设" if matched_persona else "预设",
+            preset=preset_or_persona,
+            preset_label=preset_label,
+            presets=matched_presets,
+            personas=matched_personas,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             task_id=task_id,
@@ -828,8 +941,10 @@ class ImageGenerationPlugin(Star):
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             is_usage_limit_admin=is_usage_limit_admin,
-            preset=matched_preset or matched_persona,
-            preset_label="人设" if matched_persona else "预设",
+            preset=preset_or_persona,
+            preset_label=preset_label,
+            presets=matched_presets,
+            personas=matched_personas,
         )
 
     @filter.command("生图模型")

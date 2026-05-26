@@ -875,9 +875,9 @@
       },
       "start_task_message_template": {
         "description": "开始生图任务提示模板",
-        "hint": "任务开始时发送的提示。支持占位符：{reference_image_count}、{prompt}、{preset}、{aspect_ratio}、{resolution}、{reference_images_block}、{preset_block}。留空则不发送。",
+        "hint": "任务开始时发送的提示。支持占位符：{reference_image_count}、{prompt}、{preset}、{presets}、{persona}、{personas}、{aspect_ratio}、{resolution}、{task_id}、{model}、{mode}、{reference_images_block}、{preset_block}、{persona_block}。留空则不发送。",
         "type": "text",
-        "default": "已开始生图任务{reference_images_block}{preset_block}"
+        "default": "已开始生图任务{reference_images_block}{preset_block}{persona_block} [任务ID: {task_id}]"
       }
     }
   },
