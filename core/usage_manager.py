@@ -124,14 +124,16 @@ class UsageManager:
 
     def record_usage(self, user_id: str, *, is_admin: bool = False) -> None:
         """记录用户使用次数。"""
-        if self._settings.enable_daily_limit:
-            today = datetime.date.today().isoformat()
-            if today not in self._usage_data:
-                self._usage_data[today] = {}
-            self._usage_data[today][user_id] = (
-                self._usage_data[today].get(user_id, 0) + 1
-            )
-            self._save_usage_data()
+        if not self._settings.enable_daily_limit:
+            return
+        if self.is_limit_exempt(user_id, is_admin=is_admin):
+            return
+
+        today = datetime.date.today().isoformat()
+        if today not in self._usage_data:
+            self._usage_data[today] = {}
+        self._usage_data[today][user_id] = self._usage_data[today].get(user_id, 0) + 1
+        self._save_usage_data()
 
     def get_usage_count(self, user_id: str) -> int:
         """获取用户今日使用次数。"""

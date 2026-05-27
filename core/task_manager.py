@@ -223,7 +223,7 @@ class TaskManager:
                 exc_info=True,
             )
 
-    def _on_generation_task_done(self, task_id: str, task: asyncio.Task) -> None:
+    def _on_generation_task_done(self, task_id: str, _task: asyncio.Task) -> None:
         """Detach asyncio task references when a generation task finishes."""
         if record := self._generation_tasks.get(task_id):
             record.task = None

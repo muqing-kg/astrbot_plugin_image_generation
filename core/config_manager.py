@@ -104,9 +104,7 @@ class GenerationSettings:
     result_info_items: set[str] = field(
         default_factory=lambda: set(DEFAULT_RESULT_INFO_ITEMS)
     )
-    start_task_message_template: str = (
-        "已开始生图任务{reference_images_block}{preset_block}{persona_block} [任务ID: {task_id}]"
-    )
+    start_task_message_template: str = "已开始生图任务{reference_images_block}{preset_block}{persona_block} [任务ID: {task_id}]"
 
 
 @dataclass

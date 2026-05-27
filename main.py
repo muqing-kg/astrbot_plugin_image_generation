@@ -33,6 +33,7 @@ from .core.config_manager import (
 )
 from .core.generator import ImageGenerator
 from .core.image_processor import ImageProcessor
+from .core.llm_result_handler import LLMResultHandler
 from .core.llm_tool import (
     ImageGenerationTool,
     PresetEditTool,
@@ -91,6 +92,14 @@ class ImageGenerationPlugin(Star):
 
         # 初始化任务管理器
         self.task_manager = TaskManager()
+
+        # 初始化 LLM 工具结果处理器
+        self.llm_result_handler = LLMResultHandler(
+            context=self.context,
+            config_manager=self.config_manager,
+            task_manager=self.task_manager,
+            create_background_task=self.create_background_task,
+        )
 
         # 初始化安全审核器
         self.safety_auditor = SafetyAuditor(self.context, self.config_manager)
@@ -242,6 +251,7 @@ class ImageGenerationPlugin(Star):
         preset_label: str = "预设",
         presets: list[str] | None = None,
         personas: list[str] | None = None,
+        source_event: AstrMessageEvent | None = None,
     ) -> GenerationTaskRecord:
         """Create and track an image generation task in the unified task manager."""
         if preset is None:
@@ -249,7 +259,7 @@ class ImageGenerationPlugin(Star):
                 presets or [],
                 personas or [],
             )
-        return self.task_manager.create_generation_task(
+        record = self.task_manager.create_generation_task(
             self._generate_and_send_image_async(
                 prompt=prompt,
                 images_data=images_data or None,
@@ -258,6 +268,7 @@ class ImageGenerationPlugin(Star):
                 resolution=resolution,
                 task_id=task_id,
                 is_usage_limit_admin=is_usage_limit_admin,
+                deliver_via_ai=source == "LLM工具",
             ),
             task_id=task_id,
             source=source,
@@ -269,6 +280,12 @@ class ImageGenerationPlugin(Star):
             preset=preset,
             preset_label=preset_label,
         )
+        if source == "LLM工具":
+            self.llm_result_handler.attach_task_wakeup(
+                record,
+                source_event=source_event,
+            )
+        return record
 
     def is_usage_limit_admin(self, event: AstrMessageEvent) -> bool:
         """Return whether an event sender is an AstrBot admin for usage limits."""
@@ -331,9 +348,7 @@ class ImageGenerationPlugin(Star):
         extra_content = ""
 
         for index, token in enumerate(tokens):
-            matched_preset = self._find_named_entry(
-                self.config_manager.presets, token
-            )
+            matched_preset = self._find_named_entry(self.config_manager.presets, token)
             if matched_preset:
                 preset_prompt, aspect_ratio, resolution = self._parse_preset_prompt(
                     self.config_manager.presets[matched_preset],
@@ -402,7 +417,6 @@ class ImageGenerationPlugin(Star):
         self,
         *,
         preset: str | None,
-        preset_label: str,
         presets: list[str] | None,
         personas: list[str] | None,
     ) -> dict[str, str]:
@@ -451,12 +465,12 @@ class ImageGenerationPlugin(Star):
             task_id=task_id,
             model=model,
             mode="图生图" if reference_image_count else "文生图",
+            preset_label=preset_label,
             reference_images_block=(
                 f"[{reference_image_count}张参考图]" if reference_image_count else ""
             ),
             **self._format_start_template_values(
                 preset=preset,
-                preset_label=preset_label,
                 presets=presets,
                 personas=personas,
             ),
@@ -549,6 +563,7 @@ class ImageGenerationPlugin(Star):
         resolution: str = "1K",
         task_id: str | None = None,
         is_usage_limit_admin: bool = False,
+        deliver_via_ai: bool = False,
     ) -> None:
         """异步生成图片并发送。"""
         if not self.generator or not self.generator.adapter:
@@ -622,6 +637,7 @@ class ImageGenerationPlugin(Star):
                 final_res,
                 task_id,
                 is_usage_limit_admin,
+                deliver_via_ai,
             )
             return
 
@@ -634,6 +650,7 @@ class ImageGenerationPlugin(Star):
                 final_res,
                 task_id,
                 is_usage_limit_admin,
+                deliver_via_ai,
             )
 
     async def _do_generate_and_send(
@@ -645,6 +662,7 @@ class ImageGenerationPlugin(Star):
         resolution: str | None,
         task_id: str,
         is_usage_limit_admin: bool,
+        deliver_via_ai: bool = False,
     ) -> None:
         """执行生成逻辑并发送结果。"""
         start_time = time.time()
@@ -673,6 +691,8 @@ class ImageGenerationPlugin(Star):
 
         if result.error:
             self.task_manager.mark_generation_task_failed(task_id, result.error)
+            if deliver_via_ai:
+                return
             await self.context.send_message(
                 unified_msg_origin,
                 MessageChain().message(f"❌ 生成失败: {result.error}"),
@@ -710,6 +730,8 @@ class ImageGenerationPlugin(Star):
                 task_id,
                 f"图片内容审核未通过: {image_reason}",
             )
+            if deliver_via_ai:
+                return
             await self.context.send_message(
                 unified_msg_origin,
                 MessageChain().message(f"❌ 图片内容审核未通过: {image_reason}"),
@@ -720,7 +742,7 @@ class ImageGenerationPlugin(Star):
             task_id,
             result_count=len(generated_file_paths),
             result_paths=generated_file_paths,
-            message="图片已发送",
+            message="图片已生成，等待 AI 处理" if deliver_via_ai else "图片已发送",
         )
 
         # 记录使用次数
@@ -728,6 +750,9 @@ class ImageGenerationPlugin(Star):
             unified_msg_origin,
             is_admin=is_usage_limit_admin,
         )
+
+        if deliver_via_ai:
+            return
 
         chain = MessageChain()
         for file_path in generated_file_paths:

@@ -146,7 +146,7 @@ class BaseImageAdapter(abc.ABC):
         logger.error(f"{prefix} 生图请求全部重试失败: {safe_log_text(last_error, 200)}")
         return GenerationResult(images=None, error=f"重试失败: {last_error}")
 
-    def _pre_generate(self, request: GenerationRequest) -> GenerationResult | None:
+    def _pre_generate(self, _request: GenerationRequest) -> GenerationResult | None:
         """生成前的预处理检查。
 
         子类可重写此方法进行参数验证。

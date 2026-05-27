@@ -221,7 +221,13 @@ def _parse_preset(
             plugin.config_manager.presets, preset_name
         )
         if not matched_preset:
-            return "", str(aspect_ratio), str(resolution), [], f"❌ 预设不存在: {preset_name}"
+            return (
+                "",
+                str(aspect_ratio),
+                str(resolution),
+                [],
+                f"❌ 预设不存在: {preset_name}",
+            )
 
         preset_content = plugin.config_manager.presets[matched_preset]
         preset_prompt = str(preset_content or "").strip()
@@ -496,9 +502,10 @@ async def _start_generation_task(
         preset_label=preset_label,
         presets=presets,
         personas=personas,
+        source_event=event,
     )
 
-    return plugin.format_start_task_message(
+    return plugin.llm_result_handler.format_tool_start_result(
         prompt=prompt,
         reference_image_count=len(images_data),
         preset=preset_or_persona,
