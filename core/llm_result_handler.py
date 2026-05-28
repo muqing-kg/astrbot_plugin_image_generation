@@ -21,7 +21,7 @@ from astrbot.core.utils.history_saver import persist_agent_history
 
 from .config_manager import ConfigManager
 from .logging_utils import log_prefix, safe_log_text
-from .task_manager import GenerationTaskRecord, TaskManager
+from .task_manager import GenerationTaskRecord, GenerationTaskStatus, TaskManager
 
 
 IMAGE_GENERATION_TASK_WOKE_SYSTEM_PROMPT = (
@@ -69,6 +69,15 @@ class LLMResultHandler:
             return
 
         def _on_done(_task: asyncio.Task) -> None:
+            current_record = self.task_manager.get_generation_task(record.task_id)
+            if current_record and current_record.status in {
+                GenerationTaskStatus.CANCELLING,
+                GenerationTaskStatus.CANCELLED,
+            }:
+                logger.debug(
+                    f"{log_prefix('Task', record.task_id)} 生图任务已取消，跳过 AI 结果唤醒"
+                )
+                return
             self._create_background_task(
                 self.wake_ai_for_generation_task_result(
                     task_id=record.task_id,
@@ -216,6 +225,9 @@ class LLMResultHandler:
             logger.warning(
                 f"{log_prefix('Task', task_id)} 生图任务记录不存在，无法唤醒 AI"
             )
+            return
+        if record.status == GenerationTaskStatus.CANCELLED:
+            logger.debug(f"{log_prefix('Task', task_id)} 生图任务已取消，不唤醒 AI")
             return
         if record.unified_msg_origin != source_event.unified_msg_origin:
             await self._send_fallback(
