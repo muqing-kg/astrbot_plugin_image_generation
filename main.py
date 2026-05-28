@@ -549,9 +549,7 @@ class ImageGenerationPlugin(Star):
         else:
             lines.append(f"排队: {record.queued_seconds:.2f}s")
 
-        if record.error:
-            lines.append(f"错误: {record.error}")
-        elif record.message:
+        if record.message:
             lines.append(f"说明: {record.message}")
         if record.items:
             lines.append("子请求:")
@@ -562,8 +560,6 @@ class ImageGenerationPlugin(Star):
                     item_line = f"  {item.index}. 成功 {item.result_count}张"
                 elif item.status == "failed":
                     item_line = f"  {item.index}. 失败"
-                    if item.error:
-                        item_line += f": {item.error}"
                 else:
                     item_line = f"  {item.index}. 运行中"
                 if item.max_retry_attempts:

@@ -29,7 +29,6 @@ class BaseImageAdapter(abc.ABC):
         self.timeout = config.timeout
         self.download_timeout = DEFAULT_DOWNLOAD_TIMEOUT
         self.max_retry_attempts = max(1, config.max_retry_attempts)
-        self.retryable_status_codes = set(config.retryable_status_codes)
         self.non_retryable_status_codes = set(config.non_retryable_status_codes)
         self.non_retryable_error_keywords = [
             keyword.lower()
@@ -171,11 +170,7 @@ class BaseImageAdapter(abc.ABC):
             return True
 
         if status_code := self._extract_status_code(error):
-            if status_code in self.non_retryable_status_codes:
-                return False
-            if status_code in self.retryable_status_codes:
-                return True
-            return 500 <= status_code < 600
+            return status_code not in self.non_retryable_status_codes
 
         normalized_error = error.lower()
         return not any(

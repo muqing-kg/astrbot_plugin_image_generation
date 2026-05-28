@@ -27,7 +27,6 @@ from .constants import (
     DEFAULT_NON_RETRYABLE_STATUS_CODES,
     DEFAULT_PROMPT_AUDIT_PROMPT,
     DEFAULT_RESULT_INFO_ITEMS,
-    DEFAULT_RETRYABLE_STATUS_CODES,
     DEFAULT_RATE_LIMIT_SECONDS,
     DEFAULT_RESOLUTION,
     DEFAULT_TIMEOUT,
@@ -78,9 +77,6 @@ PROVIDER_COMMON_FIELDS = frozenset(
         "capability_options",
         "timeout",
         "max_retry_attempts",
-        "retryable_status_codes",
-        "non_retryable_status_codes",
-        "non_retryable_error_keywords",
     }
 )
 
@@ -114,6 +110,12 @@ class GenerationSettings:
     max_image_count: int = DEFAULT_MAX_GENERATION_IMAGE_COUNT
     max_images_per_message: int = DEFAULT_MAX_IMAGES_PER_MESSAGE
     max_concurrent_tasks: int = DEFAULT_MAX_CONCURRENT_TASKS
+    non_retryable_status_codes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_NON_RETRYABLE_STATUS_CODES)
+    )
+    non_retryable_error_keywords: list[str] = field(
+        default_factory=lambda: list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS)
+    )
     result_info_items: set[str] = field(
         default_factory=lambda: set(DEFAULT_RESULT_INFO_ITEMS)
     )
@@ -284,6 +286,20 @@ class ConfigManager:
                 "max_concurrent_tasks",
                 DEFAULT_MAX_CONCURRENT_TASKS,
                 min_value=1,
+            ),
+            non_retryable_status_codes=self._parse_int_list(
+                cfg.get(
+                    "non_retryable_status_codes",
+                    list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
+                ),
+                list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
+            ),
+            non_retryable_error_keywords=self._parse_string_list_config(
+                cfg.get(
+                    "non_retryable_error_keywords",
+                    list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
+                ),
+                list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
             ),
             result_info_items=self._parse_result_info_items(cfg),
             start_task_message_template=self._get_str(
@@ -475,22 +491,18 @@ class ConfigManager:
                 DEFAULT_MAX_RETRY_ATTEMPTS,
                 min_value=0,
             ),
-            retryable_status_codes=self._parse_int_list_with_global_fallback(
-                provider_item,
-                gen_cfg,
-                "retryable_status_codes",
-                list(DEFAULT_RETRYABLE_STATUS_CODES),
-            ),
-            non_retryable_status_codes=self._parse_int_list_with_global_fallback(
-                provider_item,
-                gen_cfg,
-                "non_retryable_status_codes",
+            non_retryable_status_codes=self._parse_int_list(
+                gen_cfg.get(
+                    "non_retryable_status_codes",
+                    list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
+                ),
                 list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
             ),
-            non_retryable_error_keywords=self._parse_string_list_with_global_fallback(
-                provider_item,
-                gen_cfg,
-                "non_retryable_error_keywords",
+            non_retryable_error_keywords=self._parse_string_list_config(
+                gen_cfg.get(
+                    "non_retryable_error_keywords",
+                    list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
+                ),
                 list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
             ),
             capability_options=self._parse_capability_options(provider_item),
@@ -545,34 +557,6 @@ class ConfigManager:
         except (TypeError, ValueError):
             return default
         return max(min_value, parsed)
-
-    def _parse_int_list_with_global_fallback(
-        self,
-        provider_item: dict[str, Any],
-        gen_cfg: dict[str, Any],
-        key: str,
-        default: list[int],
-    ) -> list[int]:
-        """Parse a provider-level integer list, falling back to global config."""
-        global_value = self._parse_int_list(gen_cfg.get(key, default), default)
-        if key not in provider_item:
-            return global_value
-        return self._parse_int_list(provider_item.get(key), global_value)
-
-    def _parse_string_list_with_global_fallback(
-        self,
-        provider_item: dict[str, Any],
-        gen_cfg: dict[str, Any],
-        key: str,
-        default: list[str],
-    ) -> list[str]:
-        """Parse a provider-level string list, falling back to global config."""
-        global_value = self._parse_string_list_config(
-            gen_cfg.get(key, default), default
-        )
-        if key not in provider_item:
-            return global_value
-        return self._parse_string_list_config(provider_item.get(key), global_value)
 
     def _parse_int_list(self, raw: Any, default: list[int]) -> list[int]:
         """Parse a list-like config value into unique integers."""

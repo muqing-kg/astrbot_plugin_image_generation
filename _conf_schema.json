@@ -98,26 +98,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           }
         }
       },
@@ -196,26 +176,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           }
         }
       },
@@ -298,26 +258,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           },
           "model_family": {
             "description": "模型系列",
@@ -410,26 +350,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           },
           "watermark": {
             "description": "添加水印",
@@ -568,26 +488,6 @@
             },
             "default": 0
           },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
-          },
           "negative_prompt": {
             "description": "反向提示词",
             "hint": "可选；填写后随请求发送为 negative_prompt。",
@@ -722,26 +622,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           }
         }
       },
@@ -822,26 +702,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           }
         }
       },
@@ -922,26 +782,6 @@
               "step": 1
             },
             "default": 0
-          },
-          "retryable_status_codes": {
-            "description": "Retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes will be retried.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_status_codes": {
-            "description": "Non-retryable HTTP status codes override",
-            "hint": "Leave empty to use global settings. Requests with these status codes fail immediately.",
-            "type": "list",
-            "items_type": "int",
-            "default": []
-          },
-          "non_retryable_error_keywords": {
-            "description": "Non-retryable error keywords override",
-            "hint": "Leave empty to use global settings. Errors containing these keywords fail immediately.",
-            "type": "list",
-            "default": []
           }
         }
       }
@@ -977,22 +817,6 @@
           "step": 1
         },
         "default": 3
-      },
-      "retryable_status_codes": {
-        "description": "可重试 HTTP 状态码",
-        "hint": "命中这些状态码时会继续重试，例如限流、超时和服务端错误。",
-        "type": "list",
-        "items_type": "int",
-        "default": [
-          408,
-          409,
-          425,
-          429,
-          500,
-          502,
-          503,
-          504
-        ]
       },
       "non_retryable_status_codes": {
         "description": "不可重试 HTTP 状态码",
