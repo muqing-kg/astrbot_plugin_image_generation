@@ -817,6 +817,12 @@ class ImageGenerationPlugin(Star):
             unified_msg_origin=unified_msg_origin,
         )
         if not image_allowed:
+            # 生成已消耗模型调用成本，即使审核失败也计入实际生成额度。
+            self.usage_manager.record_usage(
+                unified_msg_origin,
+                is_admin=is_usage_limit_admin,
+                count=len(generated_file_paths),
+            )
             self.task_manager.mark_generation_task_failed(
                 task_id,
                 f"图片内容审核未通过: {image_reason}",
