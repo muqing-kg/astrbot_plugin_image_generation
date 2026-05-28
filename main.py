@@ -553,6 +553,24 @@ class ImageGenerationPlugin(Star):
             lines.append(f"错误: {record.error}")
         elif record.message:
             lines.append(f"说明: {record.message}")
+        if record.items:
+            lines.append("子请求:")
+            for item in sorted(
+                record.items.values(), key=lambda task_item: task_item.index
+            ):
+                if item.status == "succeeded":
+                    item_line = f"  {item.index}. 成功 {item.result_count}张"
+                elif item.status == "failed":
+                    item_line = f"  {item.index}. 失败"
+                    if item.error:
+                        item_line += f": {item.error}"
+                else:
+                    item_line = f"  {item.index}. 运行中"
+                if item.max_retry_attempts:
+                    item_line += (
+                        f"，重试 {item.retry_attempts}/{item.max_retry_attempts}"
+                    )
+                lines.append(item_line)
         return "\n".join(lines)
 
     def format_task_list(self, records: list[GenerationTaskRecord]) -> str:
@@ -954,6 +972,12 @@ class ImageGenerationPlugin(Star):
                         result = None
                         error_message = f"第 {current_index} 张生成失败: {exc}"
                         errors.append(error_message)
+                        self.task_manager.update_generation_task_item_result(
+                            task_id,
+                            index=current_index,
+                            status="failed",
+                            error=str(exc),
+                        )
                         logger.warning(
                             f"{task_log} {safe_log_text(error_message, 200)}"
                         )
@@ -964,27 +988,55 @@ class ImageGenerationPlugin(Star):
                     if result.error:
                         error_message = f"第 {current_index} 张生成失败: {result.error}"
                         errors.append(error_message)
+                        self.task_manager.update_generation_task_item_result(
+                            task_id,
+                            index=current_index,
+                            status="failed",
+                            error=result.error,
+                        )
                         logger.warning(
                             f"{task_log} {safe_log_text(error_message, 200)}"
                         )
                     elif not result.images:
                         error_message = f"第 {current_index} 张生成失败: 模型未返回图片"
                         errors.append(error_message)
+                        self.task_manager.update_generation_task_item_result(
+                            task_id,
+                            index=current_index,
+                            status="failed",
+                            error="模型未返回图片",
+                        )
                         logger.warning(f"{task_log} {error_message}")
                     else:
+                        saved_count = 0
                         for img_bytes in result.images:
                             file_path = self.image_processor.save_generated_image(
                                 task_id, img_bytes
                             )
                             if file_path:
                                 generated_file_paths.append(file_path)
+                                saved_count += 1
                             else:
                                 error_message = (
                                     f"第 {current_index} 张生成失败: 未能保存图片"
                                 )
                                 errors.append(error_message)
+                                self.task_manager.update_generation_task_item_result(
+                                    task_id,
+                                    index=current_index,
+                                    status="failed",
+                                    result_count=saved_count,
+                                    error="未能保存图片",
+                                )
                                 logger.warning(f"{task_log} {error_message}")
                                 break
+                        else:
+                            self.task_manager.update_generation_task_item_result(
+                                task_id,
+                                index=current_index,
+                                status="succeeded",
+                                result_count=saved_count,
+                            )
 
                     self.task_manager.update_generation_task_progress(
                         task_id,

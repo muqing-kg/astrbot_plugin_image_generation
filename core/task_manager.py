@@ -54,6 +54,18 @@ GENERATION_TASK_STATUS_LABELS = {
 
 
 @dataclass
+class GenerationTaskItem:
+    """Per-request generation result metadata."""
+
+    index: int
+    status: str = "pending"
+    result_count: int = 0
+    error: str = ""
+    retry_attempts: int = 0
+    max_retry_attempts: int = 0
+
+
+@dataclass
 class GenerationTaskRecord:
     """In-memory metadata for one image generation task."""
 
@@ -78,6 +90,7 @@ class GenerationTaskRecord:
     current_index: int = 0
     retry_attempt: int = 0
     max_retry_attempts: int = 0
+    items: dict[int, GenerationTaskItem] = field(default_factory=dict)
     task: asyncio.Task | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -293,6 +306,37 @@ class TaskManager:
         record.current_index = max(1, current_index)
         record.retry_attempt = max(0, retry_attempt)
         record.max_retry_attempts = max(0, max_retry_attempts)
+        item = record.items.setdefault(
+            record.current_index,
+            GenerationTaskItem(index=record.current_index, status="running"),
+        )
+        item.status = "running"
+        item.retry_attempts = max(item.retry_attempts, record.retry_attempt)
+        item.max_retry_attempts = max(
+            item.max_retry_attempts, record.max_retry_attempts
+        )
+
+    def update_generation_task_item_result(
+        self,
+        task_id: str,
+        *,
+        index: int,
+        status: str,
+        result_count: int = 0,
+        error: str = "",
+    ) -> None:
+        """Record per-request generation result details."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return
+        safe_index = max(1, index)
+        item = record.items.setdefault(
+            safe_index,
+            GenerationTaskItem(index=safe_index),
+        )
+        item.status = status
+        item.result_count = max(0, result_count)
+        item.error = safe_log_text(error, 200) if error else ""
 
     def update_generation_task_progress(
         self,
