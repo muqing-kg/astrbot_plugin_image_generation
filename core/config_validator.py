@@ -26,11 +26,19 @@ SCHEMA_DEFAULT_FACTORIES: dict[str, Any] = {
 MIN_NUMBER_VALUES: dict[str, int | float] = {
     "api_providers.*.timeout": 0,
     "api_providers.*.max_retry_attempts": 0,
+    "api_providers.*.retryable_status_codes": 100,
+    "api_providers.*.retryable_status_codes.*": 100,
+    "api_providers.*.non_retryable_status_codes": 100,
+    "api_providers.*.non_retryable_status_codes.*": 100,
     "api_providers.*.sequential_max_images": 1,
     "api_providers.*.max_reference_images": 1,
     "api_providers.*.steps": 0,
     "generation.timeout": 1,
     "generation.max_retry_attempts": 0,
+    "generation.retryable_status_codes": 100,
+    "generation.retryable_status_codes.*": 100,
+    "generation.non_retryable_status_codes": 100,
+    "generation.non_retryable_status_codes.*": 100,
     "generation.max_concurrent_tasks": 1,
     "generation.default_image_count": 1,
     "generation.max_image_count": 1,
@@ -162,8 +170,12 @@ class ConfigValidator:
         value = self._coerce_schema_value(raw, meta_type, default)
         changed = value != raw
 
-        value, options_changed = self._validate_options(value, meta, default)
-        changed |= options_changed
+        if meta_type == "list" and meta.get("items_type") == "int":
+            value, list_changed = self._validate_int_list(value, default, path)
+            changed |= list_changed
+        else:
+            value, options_changed = self._validate_options(value, meta, default)
+            changed |= options_changed
 
         value, range_changed = self._validate_number_minimum(value, path, default)
         changed |= range_changed
@@ -231,6 +243,42 @@ class ConfigValidator:
             return value, False
         return copy.deepcopy(default), value != default
 
+    def _validate_int_list(
+        self,
+        values: list[Any],
+        default: Any,
+        path: str,
+    ) -> tuple[list[int], bool]:
+        """Coerce and validate list items as integers."""
+        result: list[int] = []
+        changed = False
+        for index, item in enumerate(values):
+            if isinstance(item, bool):
+                changed = True
+                continue
+            try:
+                parsed = int(item)
+            except (TypeError, ValueError):
+                changed = True
+                continue
+            parsed, min_changed = self._validate_number_minimum(
+                parsed,
+                f"{path}[{index}]",
+                None,
+            )
+            if min_changed or parsed is None:
+                changed = True
+                continue
+            if parsed in result:
+                changed = True
+                continue
+            result.append(parsed)
+            changed |= parsed != item
+        if result:
+            return result, changed or result != values
+        fallback = copy.deepcopy(default) if isinstance(default, list) else []
+        return fallback, values != fallback
+
     def _validate_number_minimum(
         self,
         value: Any,
@@ -262,7 +310,9 @@ class ConfigValidator:
         for part in parts:
             bracket_index = part.find("[")
             if bracket_index >= 0:
-                normalized_parts.extend((part[:bracket_index], "*"))
+                if part[:bracket_index]:
+                    normalized_parts.append(part[:bracket_index])
+                normalized_parts.append("*")
             else:
                 normalized_parts.append(part)
         return ".".join(part for part in normalized_parts if part)

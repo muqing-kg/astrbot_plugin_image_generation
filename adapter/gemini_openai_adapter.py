@@ -35,6 +35,11 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
         response = await self._make_request(session, payload, request.task_id)
         if response is None:
             return None, "API 请求失败"
+        if response_error := response.get("error"):
+            if isinstance(response_error, dict):
+                message = response_error.get("message") or response_error.get("code")
+                return None, str(message or response_error)
+            return None, str(response_error)
 
         images = await self._extract_images(response, request.task_id)
         if images:
@@ -123,7 +128,7 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
                     logger.error(
                         f"{prefix} 错误 {response.status} (耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
                     )
-                    return None
+                    return {"error": {"message": f"API 错误 ({response.status})"}}
                 return await response.json()
         except Exception as e:
             duration = time.time() - start_time

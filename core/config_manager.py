@@ -22,8 +22,11 @@ from .constants import (
     DEFAULT_MAX_CONCURRENT_TASKS,
     DEFAULT_MAX_IMAGE_SIZE_MB,
     DEFAULT_MAX_RETRY_ATTEMPTS,
+    DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS,
+    DEFAULT_NON_RETRYABLE_STATUS_CODES,
     DEFAULT_PROMPT_AUDIT_PROMPT,
     DEFAULT_RESULT_INFO_ITEMS,
+    DEFAULT_RETRYABLE_STATUS_CODES,
     DEFAULT_RATE_LIMIT_SECONDS,
     DEFAULT_RESOLUTION,
     DEFAULT_TIMEOUT,
@@ -74,6 +77,9 @@ PROVIDER_COMMON_FIELDS = frozenset(
         "capability_options",
         "timeout",
         "max_retry_attempts",
+        "retryable_status_codes",
+        "non_retryable_status_codes",
+        "non_retryable_error_keywords",
     }
 )
 
@@ -461,6 +467,24 @@ class ConfigManager:
                 DEFAULT_MAX_RETRY_ATTEMPTS,
                 min_value=0,
             ),
+            retryable_status_codes=self._parse_int_list_with_global_fallback(
+                provider_item,
+                gen_cfg,
+                "retryable_status_codes",
+                list(DEFAULT_RETRYABLE_STATUS_CODES),
+            ),
+            non_retryable_status_codes=self._parse_int_list_with_global_fallback(
+                provider_item,
+                gen_cfg,
+                "non_retryable_status_codes",
+                list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
+            ),
+            non_retryable_error_keywords=self._parse_string_list_with_global_fallback(
+                provider_item,
+                gen_cfg,
+                "non_retryable_error_keywords",
+                list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
+            ),
             capability_options=self._parse_capability_options(provider_item),
             extra=self._parse_provider_extra(adapter_type, provider_item),
         )
@@ -514,6 +538,51 @@ class ConfigManager:
             return default
         return max(min_value, parsed)
 
+    def _parse_int_list_with_global_fallback(
+        self,
+        provider_item: dict[str, Any],
+        gen_cfg: dict[str, Any],
+        key: str,
+        default: list[int],
+    ) -> list[int]:
+        """Parse a provider-level integer list, falling back to global config."""
+        global_value = self._parse_int_list(gen_cfg.get(key, default), default)
+        if key not in provider_item:
+            return global_value
+        return self._parse_int_list(provider_item.get(key), global_value)
+
+    def _parse_string_list_with_global_fallback(
+        self,
+        provider_item: dict[str, Any],
+        gen_cfg: dict[str, Any],
+        key: str,
+        default: list[str],
+    ) -> list[str]:
+        """Parse a provider-level string list, falling back to global config."""
+        global_value = self._parse_string_list_config(
+            gen_cfg.get(key, default), default
+        )
+        if key not in provider_item:
+            return global_value
+        return self._parse_string_list_config(provider_item.get(key), global_value)
+
+    def _parse_int_list(self, raw: Any, default: list[int]) -> list[int]:
+        """Parse a list-like config value into unique integers."""
+        if not isinstance(raw, list):
+            return list(default)
+
+        result: list[int] = []
+        for item in raw:
+            if isinstance(item, bool):
+                continue
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value not in result:
+                result.append(value)
+        return result
+
     def _parse_provider_extra(
         self,
         adapter_type: AdapterType,
@@ -544,6 +613,12 @@ class ConfigManager:
         if not isinstance(raw, list):
             return []
         return [item for item in (str(v).strip() for v in raw) if item]
+
+    def _parse_string_list_config(self, raw: Any, default: list[str]) -> list[str]:
+        """Parse a string list config value while preserving explicit empty lists."""
+        if not isinstance(raw, list):
+            return list(default)
+        return self._parse_string_list(raw)
 
     def _select_adapter_config(
         self, provider_configs: list[AdapterConfig], model_setting: str

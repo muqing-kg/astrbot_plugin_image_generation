@@ -34,6 +34,30 @@ DEFAULT_DOWNLOAD_TIMEOUT = 30
 DEFAULT_MAX_RETRY_ATTEMPTS = 3
 """默认最大重试次数。"""
 
+DEFAULT_RETRYABLE_STATUS_CODES = (408, 409, 425, 429, 500, 502, 503, 504)
+"""默认可重试 HTTP 状态码。"""
+
+DEFAULT_NON_RETRYABLE_STATUS_CODES = (400, 401, 403, 404, 405, 422)
+"""默认不可重试 HTTP 状态码。"""
+
+DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS = (
+    "参数",
+    "无效",
+    "不支持",
+    "未配置 API Key",
+    "invalid",
+    "bad request",
+    "unauthorized",
+    "forbidden",
+    "permission",
+    "not found",
+    "unsupported",
+    "safety",
+    "content policy",
+    "policy violation",
+)
+"""默认不可重试错误关键词。"""
+
 DEFAULT_AUDIT_MAX_RETRY_ATTEMPTS = 3
 """默认审核模型最大重试次数。"""
 

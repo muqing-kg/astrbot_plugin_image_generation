@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import re
 
 import aiohttp
 
@@ -10,6 +11,9 @@ from astrbot.api import logger
 from .constants import DEFAULT_DOWNLOAD_TIMEOUT
 from .logging_utils import log_prefix, mask_sensitive, safe_log_text
 from .types import AdapterConfig, GenerationRequest, GenerationResult, ImageCapability
+
+
+API_STATUS_ERROR_PATTERN = re.compile(r"API 错误\s*\((\d{3})\)")
 
 
 class BaseImageAdapter(abc.ABC):
@@ -25,6 +29,13 @@ class BaseImageAdapter(abc.ABC):
         self.timeout = config.timeout
         self.download_timeout = DEFAULT_DOWNLOAD_TIMEOUT
         self.max_retry_attempts = max(1, config.max_retry_attempts)
+        self.retryable_status_codes = set(config.retryable_status_codes)
+        self.non_retryable_status_codes = set(config.non_retryable_status_codes)
+        self.non_retryable_error_keywords = [
+            keyword.lower()
+            for keyword in config.non_retryable_error_keywords
+            if keyword
+        ]
         self.safety_settings = config.safety_settings
         self._session: aiohttp.ClientSession | None = None
 
@@ -138,6 +149,11 @@ class BaseImageAdapter(abc.ABC):
                 f"{prefix} 生图请求尝试失败 ({attempt + 1}/{self.max_retry_attempts}): "
                 f"{safe_log_text(last_error, 200)}"
             )
+            if not self._is_retryable_error(last_error):
+                logger.warning(
+                    f"{prefix} 生图请求错误不可重试，停止重试: {safe_log_text(last_error, 200)}"
+                )
+                return GenerationResult(images=None, error=last_error)
             if attempt < self.max_retry_attempts - 1:
                 self._rotate_api_key()
                 # 轮换 Key 时进行指数退避
@@ -148,6 +164,33 @@ class BaseImageAdapter(abc.ABC):
 
         logger.error(f"{prefix} 生图请求全部重试失败: {safe_log_text(last_error, 200)}")
         return GenerationResult(images=None, error=f"重试失败: {last_error}")
+
+    def _is_retryable_error(self, error: str) -> bool:
+        """Return whether an adapter error should be retried."""
+        if not error:
+            return True
+
+        if status_code := self._extract_status_code(error):
+            if status_code in self.non_retryable_status_codes:
+                return False
+            if status_code in self.retryable_status_codes:
+                return True
+            return 500 <= status_code < 600
+
+        normalized_error = error.lower()
+        return not any(
+            keyword in normalized_error for keyword in self.non_retryable_error_keywords
+        )
+
+    def _extract_status_code(self, error: str) -> int | None:
+        """Extract an HTTP status code from a normalized adapter error."""
+        match = API_STATUS_ERROR_PATTERN.search(error)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
 
     def _pre_generate(self, _request: GenerationRequest) -> GenerationResult | None:
         """生成前的预处理检查。
