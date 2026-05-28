@@ -5,3 +5,4 @@ dev/
 .vscode/
 .ruff_cache/
 data/
+TODO.md
