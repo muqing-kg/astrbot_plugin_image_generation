@@ -4,11 +4,12 @@ from astrbot.api import logger
 
 from ..adapter import (
     AgnesAIAdapter,
+    CustomHTTPAdapter,
     GeminiAdapter,
-    GeminiOpenAIAdapter,
     GiteeAIAdapter,
     GrokAdapter,
     Jimeng2APIAdapter,
+    OpenAIChatAdapter,
     OpenAIAdapter,
     SiliconFlowAdapter,
     VolcengineArkAdapter,
@@ -35,7 +36,7 @@ class ImageGenerator:
         """根据配置创建对应的适配器。"""
         adapter_map: dict[AdapterType, type] = {
             AdapterType.GEMINI: GeminiAdapter,
-            AdapterType.GEMINI_OPENAI: GeminiOpenAIAdapter,
+            AdapterType.OPENAI_CHAT: OpenAIChatAdapter,
             AdapterType.OPENAI: OpenAIAdapter,
             AdapterType.SILICONFLOW: SiliconFlowAdapter,
             AdapterType.VOLCENGINE_ARK: VolcengineArkAdapter,
@@ -43,6 +44,7 @@ class ImageGenerator:
             AdapterType.AGNES_AI: AgnesAIAdapter,
             AdapterType.JIMENG2API: Jimeng2APIAdapter,
             AdapterType.GROK: GrokAdapter,
+            AdapterType.CUSTOM_HTTP: CustomHTTPAdapter,
         }
 
         adapter_cls = adapter_map.get(config.type)

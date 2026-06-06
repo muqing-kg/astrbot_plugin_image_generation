@@ -1,4 +1,12 @@
 ### 更新日志
+- **v1.3.0-2026-06-06**
+  - 新增 `custom_http` 自定义 HTTP JSON 生图适配器，支持自定义 URL、请求头、查询参数、请求体和响应图片提取路径。
+  - 自定义 HTTP 和 OpenAI Chat 的 JSON 配置项启用代码编辑器模式，便于维护复杂 payload。
+  - 将原 `gemini_openai` 适配器重命名并改造为通用 `openai_chat` OpenAI Chat Completions 兼容适配器，不再保留旧配置键兼容。
+  - OpenAI Chat 适配器支持自定义提示词前缀、`modalities` 和额外请求体 JSON。
+  - 新增 `/生图` 空参数帮助信息：展示当前使用模型和常用指令用法，替代原本的提示词缺失提示。
+  - 优化 `/生图任务` 列表末尾用法提示，拆分查看详情和取消任务说明，提高可读性。
+
 - **v1.2.9-2026-06-05**
   - 合并 [PR #29](https://github.com/Railgun19457/astrbot_plugin_image_generation/pull/29),添加Agnes AI适配器
   - 移除配置中关于人设模板的警告

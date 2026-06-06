@@ -10,7 +10,7 @@ class AdapterType(str, enum.Enum):
     """支持的图像生成适配器类型。"""
 
     GEMINI = "gemini"
-    GEMINI_OPENAI = "gemini_openai"
+    OPENAI_CHAT = "openai_chat"
     OPENAI = "openai"
     SILICONFLOW = "siliconflow_adapter"
     VOLCENGINE_ARK = "volcengine_ark"
@@ -18,6 +18,7 @@ class AdapterType(str, enum.Enum):
     AGNES_AI = "agnes_ai"
     JIMENG2API = "jimeng2api"
     GROK = "grok"
+    CUSTOM_HTTP = "custom_http"
 
 
 class ImageCapability(enum.Flag):

@@ -126,7 +126,9 @@ class ImageGenerationPublicAPI:
         task_id = self._new_task_id(scope=scope, source=request_source)
 
         requested_count = plugin.normalize_image_count(
-            image_count if image_count is not None else plugin.config_manager.default_image_count
+            image_count
+            if image_count is not None
+            else plugin.config_manager.default_image_count
         )
         final_aspect_ratio = aspect_ratio or plugin.config_manager.default_aspect_ratio
         final_resolution = resolution or plugin.config_manager.default_resolution
@@ -490,7 +492,15 @@ class ImageGenerationPublicAPI:
                 preset_name,
             )
             if not matched_preset:
-                return "", aspect_ratio, resolution, [], [], [], f"预设不存在: {preset_name}"
+                return (
+                    "",
+                    aspect_ratio,
+                    resolution,
+                    [],
+                    [],
+                    [],
+                    f"预设不存在: {preset_name}",
+                )
             preset_prompt, aspect_ratio, resolution = self._parse_preset_prompt(
                 config_manager.presets[matched_preset],
                 aspect_ratio,
@@ -506,7 +516,15 @@ class ImageGenerationPublicAPI:
                 persona_name,
             )
             if not matched_persona:
-                return "", aspect_ratio, resolution, [], [], [], f"人设不存在: {persona_name}"
+                return (
+                    "",
+                    aspect_ratio,
+                    resolution,
+                    [],
+                    [],
+                    [],
+                    f"人设不存在: {persona_name}",
+                )
             persona = config_manager.personas[matched_persona]
             persona_prompt = persona.prompt.strip()
             if persona_prompt:

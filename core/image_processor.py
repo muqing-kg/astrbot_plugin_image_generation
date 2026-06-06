@@ -264,7 +264,9 @@ class ImageProcessor:
                             continue
                         avatar_user_ids.add(uid)
                         if avatar_data := await self.get_avatar(uid):
-                            images_data.append(ImageData(data=avatar_data, mime_type="image/jpeg"))
+                            images_data.append(
+                                ImageData(data=avatar_data, mime_type="image/jpeg")
+                            )
             except Exception as e:
                 logger.error(f"{LOG} 提取消息组件图片失败: {e}", exc_info=True)
                 continue

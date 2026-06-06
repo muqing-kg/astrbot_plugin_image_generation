@@ -101,21 +101,20 @@
           }
         }
       },
-      "gemini_openai": {
-        "name": "Gemini OpenAI 兼容接口",
-        "hint": "调用兼容 OpenAI 格式的 Gemini 图像生成接口。",
+      "openai_chat": {
+        "name": "OpenAI Chat 兼容接口",
+        "hint": "调用通用 OpenAI Chat Completions 兼容图像生成接口，适用于能在 /v1/chat/completions 返回图片的模型或中转服务。",
         "display_item": "name",
         "hide_hint_in_list": true,
         "items": {
           "name": {
             "description": "供应商名称",
             "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
-            "type": "string",
-            "default": ""
+            "type": "string"
           },
           "base_url": {
             "description": "API Base URL",
-            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
+            "hint": "填写API地址",
             "type": "string",
             "default": ""
           },
@@ -133,9 +132,10 @@
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换；请按账号实际可用模型维护。",
+            "hint": "用于 /生图模型 命令切换。",
             "type": "list",
             "default": [
+              "gpt-4o-image",
               "gemini-3-pro-image",
               "gemini-2.5-flash-image"
             ]
@@ -176,6 +176,29 @@
               "step": 1
             },
             "default": 0
+          },
+          "prompt_prefix": {
+            "description": "提示词前缀",
+            "hint": "发送到 Chat Completions 的文本前缀；留空则直接发送用户提示词。",
+            "type": "string",
+            "default": "Generate an image: "
+          },
+          "modalities": {
+            "description": "输出模态",
+            "hint": "发送到请求体的 modalities 字段；部分兼容接口需要 image,text，留空则不发送。",
+            "type": "list",
+            "default": [
+              "image",
+              "text"
+            ]
+          },
+          "extra_body_json": {
+            "description": "额外请求体 JSON",
+            "hint": "可选。填写 JSON 对象，会合并到 Chat Completions 请求体顶层。",
+            "type": "string",
+            "editor_mode": true,
+            "editor_language": "json",
+            "default": ""
           }
         }
       },
@@ -717,7 +740,7 @@
         }
       },
       "jimeng2api": {
-        "name": "即梦接口",
+        "name": "即梦逆向接口",
         "hint": "调用 iptag/jimeng-api 项目的图像生成接口。",
         "display_item": "name",
         "hide_hint_in_list": true,
@@ -873,6 +896,161 @@
               "step": 1
             },
             "default": 0
+          }
+        }
+      },
+      "custom_http": {
+        "name": "自定义 HTTP 接口(Beta)",
+        "hint": "高级配置：自定义 JSON 请求体、请求头和响应图片提取路径，适配任意返回 base64、data URL 或图片 URL 的 HTTP 生图接口。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
+            "type": "string",
+            "default": "自定义HTTP"
+          },
+          "base_url": {
+            "description": "API Base URL",
+            "hint": "接口基础地址。自定义 HTTP 不会自动移除 /v1 路径。",
+            "type": "string",
+            "default": ""
+          },
+          "endpoint": {
+            "description": "Endpoint",
+            "hint": "可选。与 API Base URL 拼接，例如 /v1/images/generations；如果填写完整 http(s) 地址则直接使用。",
+            "type": "string",
+            "default": "/v1/images/generations"
+          },
+          "request_method": {
+            "description": "请求方法",
+            "hint": "第一版主要面向 JSON 接口，推荐使用 POST。",
+            "type": "string",
+            "options": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "default": "POST"
+          },
+          "proxy": {
+            "description": "代理地址",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
+            "type": "string",
+            "default": ""
+          },
+          "api_keys": {
+            "description": "API 密钥",
+            "hint": "可选；可在 JSON 模板中用 {api_key} 引用，多个 Key 会自动轮换。",
+            "type": "list",
+            "default": []
+          },
+          "available_models": {
+            "description": "可用模型列表",
+            "hint": "用于 /生图模型 命令切换；可在 JSON 模板中用 {model} 引用。",
+            "type": "list",
+            "default": [
+              "custom-image-model"
+            ]
+          },
+          "capability_options": {
+            "description": "模型能力",
+            "hint": "按接口实际能力勾选；未勾选的能力不会在请求中使用。",
+            "type": "list",
+            "options": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ],
+            "default": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
+          },
+          "timeout": {
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用全局超时时间。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 600,
+              "step": 10
+            },
+            "default": 0
+          },
+          "max_retry_attempts": {
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用全局重试次数。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 1
+            },
+            "default": 0
+          },
+          "headers_json": {
+            "description": "请求头 JSON",
+            "hint": "JSON 对象，支持占位符：{api_key}、{model}、{prompt}、{task_id} 等。Authorization 为 Bearer 空值时会自动忽略。",
+            "type": "string",
+            "editor_mode": true,
+            "editor_language": "json",
+            "default": "{\n  \"Authorization\": \"Bearer {api_key}\",\n  \"Content-Type\": \"application/json\"\n}"
+          },
+          "query_params_json": {
+            "description": "查询参数 JSON",
+            "hint": "JSON 对象，会作为 URL 查询参数发送；支持占位符。",
+            "type": "string",
+            "editor_mode": true,
+            "editor_language": "json",
+            "default": "{}"
+          },
+          "payload_json": {
+            "description": "请求体 JSON",
+            "hint": "JSON 对象，支持占位符：{prompt}、{model}、{aspect_ratio}、{resolution}、{reference_images_data_url}、{reference_images_base64}、{reference_image_0}、{task_id}。如果字段值完全等于某个数组占位符，会作为数组写入而不是字符串。",
+            "type": "string",
+            "editor_mode": true,
+            "editor_language": "json",
+            "default": "{\n  \"model\": \"{model}\",\n  \"prompt\": \"{prompt}\",\n  \"response_format\": \"b64_json\"\n}"
+          },
+          "image_result_path": {
+            "description": "图片结果路径",
+            "hint": "从 JSON 响应中提取图片数据的路径，支持点号和 * 通配，例如 data.*.b64_json、data.*.url；多个路径可用换行或逗号分隔。",
+            "type": "text",
+            "default": "data.*.b64_json"
+          },
+          "image_result_type": {
+            "description": "图片结果类型",
+            "hint": "auto 会按内容自动识别 base64、data URL 和 HTTP 图片 URL。",
+            "type": "string",
+            "options": [
+              "auto",
+              "base64",
+              "data_url",
+              "url"
+            ],
+            "default": "auto"
+          },
+          "error_result_path": {
+            "description": "错误信息路径",
+            "hint": "可选。从 JSON 响应中提取错误信息的路径；留空时会尝试 error.message 和 error。",
+            "type": "string",
+            "default": "error.message"
+          },
+          "success_status_codes": {
+            "description": "成功 HTTP 状态码",
+            "hint": "接口返回这些状态码时视为成功。",
+            "type": "list",
+            "items_type": "int",
+            "default": [
+              200
+            ]
           }
         }
       }

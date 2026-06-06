@@ -19,6 +19,8 @@ API_STATUS_ERROR_PATTERN = re.compile(r"API 错误\s*\((\d{3})\)")
 class BaseImageAdapter(abc.ABC):
     """图像生成适配器基类。"""
 
+    requires_api_key = True
+
     def __init__(self, config: AdapterConfig):
         self.config = config
         self.api_keys = config.api_keys or []
@@ -111,7 +113,7 @@ class BaseImageAdapter(abc.ABC):
         子类应重写 `_generate_once()` 方法来实现具体的生成逻辑。
         如需在生成前进行预处理验证，可重写 `_pre_generate()` 方法。
         """
-        if not self.api_keys:
+        if self.requires_api_key and not self.api_keys:
             return GenerationResult(images=None, error="未配置 API Key")
 
         prefix = self._get_log_prefix(request.task_id)

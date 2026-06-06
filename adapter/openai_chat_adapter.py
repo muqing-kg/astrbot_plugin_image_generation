@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 import time
 from typing import Any
@@ -10,15 +11,15 @@ import aiohttp
 from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import GEMINI_DEFAULT_BASE_URL, UNSPECIFIED_OPTION
+from ..core.constants import OPENAI_DEFAULT_BASE_URL
 from ..core.logging_utils import safe_log_error_body, safe_log_url
 from ..core.types import GenerationRequest, ImageCapability
 
 
-class GeminiOpenAIAdapter(BaseImageAdapter):
-    """通过 OpenAI 兼容的聊天补全接口进行 Gemini 图像生成。"""
+class OpenAIChatAdapter(BaseImageAdapter):
+    """通用 OpenAI Chat Completions 兼容图像生成适配器。"""
 
-    DEFAULT_BASE_URL = GEMINI_DEFAULT_BASE_URL
+    DEFAULT_BASE_URL = OPENAI_DEFAULT_BASE_URL
 
     def get_capabilities(self) -> ImageCapability:
         """获取适配器支持的功能。"""
@@ -55,7 +56,7 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
     def _build_payload(self, request: GenerationRequest) -> dict:
         """构建请求载荷。"""
         message_content: list[dict] = [
-            {"type": "text", "text": f"Generate an image: {request.prompt}"}
+            {"type": "text", "text": self._build_prompt_text(request.prompt)}
         ]
 
         for image in request.images:
@@ -70,27 +71,72 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "user", "content": message_content}],
-            "modalities": ["image", "text"],
             "stream": False,
         }
 
-        image_config: dict[str, Any] = {}
-        generation_config: dict[str, Any] = {}
+        if modalities := self._get_modalities():
+            payload["modalities"] = modalities
 
-        if (
-            request.aspect_ratio
-            and request.aspect_ratio != UNSPECIFIED_OPTION
-            and not request.images
-        ):
-            image_config["aspectRatio"] = request.aspect_ratio
-        if request.resolution and request.resolution != UNSPECIFIED_OPTION:
-            image_config["imageSize"] = request.resolution
-        if image_config:
-            generation_config["imageConfig"] = image_config
-        if generation_config:
-            payload["generationConfig"] = generation_config
+        payload.update(self._get_extra_body())
 
         return payload
+
+    def _build_prompt_text(self, prompt: str) -> str:
+        """Build final text prompt sent to the chat endpoint."""
+        prompt_prefix = str(
+            self.config.extra.get("prompt_prefix", "Generate an image: ") or ""
+        )
+        return f"{prompt_prefix}{prompt}" if prompt_prefix else prompt
+
+    def _get_modalities(self) -> list[str] | None:
+        """Read optional modalities from adapter extra config."""
+        raw_modalities = self.config.extra.get("modalities", ["image", "text"])
+        if isinstance(raw_modalities, str):
+            raw_modalities = raw_modalities.strip()
+            if not raw_modalities:
+                return None
+            if raw_modalities.startswith("["):
+                try:
+                    raw_modalities = json.loads(raw_modalities)
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        f"{self._get_log_prefix()} modalities JSON 解析失败: {exc}"
+                    )
+                    return None
+            else:
+                raw_modalities = re.split(r"[,，\s]+", raw_modalities)
+
+        if not isinstance(raw_modalities, list):
+            return None
+
+        modalities: list[str] = []
+        for item in raw_modalities:
+            value = str(item or "").strip()
+            if value and value not in modalities:
+                modalities.append(value)
+        return modalities or None
+
+    def _get_extra_body(self) -> dict[str, Any]:
+        """Read optional JSON body fields from adapter extra config."""
+        raw_extra_body = self.config.extra.get("extra_body") or self.config.extra.get(
+            "extra_body_json"
+        )
+        if not raw_extra_body:
+            return {}
+        if isinstance(raw_extra_body, dict):
+            return dict(raw_extra_body)
+        if not isinstance(raw_extra_body, str):
+            return {}
+
+        try:
+            parsed = json.loads(raw_extra_body)
+        except json.JSONDecodeError as exc:
+            logger.warning(f"{self._get_log_prefix()} extra_body JSON 解析失败: {exc}")
+            return {}
+        if not isinstance(parsed, dict):
+            logger.warning(f"{self._get_log_prefix()} extra_body 必须是 JSON 对象")
+            return {}
+        return parsed
 
     async def _make_request(
         self,
@@ -100,7 +146,7 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
     ) -> dict | None:
         """发送 API 请求。"""
         start_time = time.time()
-        url = f"{self.base_url or self.DEFAULT_BASE_URL}/v1/chat/completions"
+        url = self._build_chat_completions_url()
         api_key = self._get_current_api_key()
         masked_key = self._get_masked_api_key()
         prefix = self._get_log_prefix(task_id)
@@ -134,6 +180,15 @@ class GeminiOpenAIAdapter(BaseImageAdapter):
             duration = time.time() - start_time
             logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
             return None
+
+    def _build_chat_completions_url(self) -> str:
+        """Build a chat completions URL from flexible OpenAI-compatible base URLs."""
+        base = (self.base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        if base.endswith("/v1"):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
 
     async def _download_image_from_url(
         self, url: str, task_id: str | None = None

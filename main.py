@@ -588,8 +588,29 @@ class ImageGenerationPlugin(Star):
             ]
             lines.append(f"{index}. " + " | ".join(parts))
         lines.append(
-            "\n用法: /生图任务 <编号或任务ID> 查看详情，/生图取消 <编号或任务ID> 取消任务"
+            "\n用法: \n/生图任务 <编号或任务ID> 查看详情\n/生图取消 <编号或任务ID> 取消任务"
         )
+        return "\n".join(lines)
+
+    def format_image_command_help(self) -> str:
+        """Format help text for the image generation command."""
+        adapter_config = self.config_manager.adapter_config
+        current_model = (
+            f"{adapter_config.name}/{adapter_config.model}"
+            if adapter_config
+            else "未配置"
+        )
+        lines = [
+            "🎨 生图帮助",
+            f"当前模型: {current_model}",
+            "",
+            "指令列表:",
+            "/生图 [预设/人设] [提示词] [数量]",
+            "/生图模型 - 查看或切换模型",
+            "/生图任务 [编号或任务ID]- 查看正在进行的任务",
+            "/生图取消 <编号或任务ID> - 取消指定任务",
+            "/预设 [添加/删除] - 查看或管理预设/人设",
+        ]
         return "\n".join(lines)
 
     def resolve_task_reference(
@@ -1168,12 +1189,16 @@ class ImageGenerationPlugin(Star):
         if not cmd_parts:
             return
 
+        raw_prompt = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
+        if not raw_prompt:
+            yield event.plain_result(self.format_image_command_help())
+            return
+
         if not self.generator or not self.generator.adapter:
             logger.warning(f"{LOG} 生图指令失败: 生成器未初始化，用户={masked_uid}")
             yield event.plain_result("❌ 生图生成器未初始化")
             return
 
-        raw_prompt = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
         image_count, prompt = self._parse_command_image_count(raw_prompt)
 
         aspect_ratio = self.config_manager.default_aspect_ratio
