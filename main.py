@@ -6,8 +6,6 @@ AstrBot 图像生成插件主模块
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import time
 from collections.abc import Coroutine
 from pathlib import Path
@@ -26,11 +24,6 @@ from .core.config_manager import (
     LLM_TOOL_PRESET_QUERY,
     LLM_TOOL_TASK_MANAGEMENT,
     ConfigManager,
-    RESULT_INFO_COUNT,
-    RESULT_INFO_DURATION,
-    RESULT_INFO_MODEL,
-    RESULT_INFO_TASK_ID,
-    RESULT_INFO_USAGE,
 )
 from .core.generator import ImageGenerator
 from .core.image_processor import ImageProcessor
@@ -51,19 +44,27 @@ from .core.logging_utils import (
     safe_log_error_body,
     safe_log_text,
 )
+from .core.result_formatter import (
+    build_result_info_message,
+    format_image_command_help as render_image_command_help,
+    format_start_task_message as render_start_task_message,
+    format_task_detail as render_task_detail,
+    format_task_list as render_task_list,
+)
 from .core.safety_auditor import SafetyAuditor
+from .core.task_id import new_task_id
 from .core.task_manager import GenerationTaskRecord, TaskManager
+from .core.template_utils import (
+    find_named_entry,
+    format_template_summary,
+    parse_preset_prompt,
+)
 from .core.types import GenerationRequest, ImageCapability, ImageData
 from .core.usage_manager import UsageManager
 from .core.utils import validate_aspect_ratio, validate_resolution
 
 
 LOG = log_prefix("Plugin")
-
-
-class _SafeFormatDict(dict[str, str]):
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
 
 
 class ImageGenerationPlugin(Star):
@@ -351,13 +352,7 @@ class ImageGenerationPlugin(Star):
 
     def _find_named_entry(self, entries: dict[str, Any], token: str) -> str | None:
         """Find an entry by exact or case-insensitive name."""
-        if token in entries:
-            return token
-        lowered_token = token.lower()
-        for name in entries:
-            if name.lower() == lowered_token:
-                return name
-        return None
+        return find_named_entry(entries, token)
 
     def _parse_preset_prompt(
         self,
@@ -366,22 +361,7 @@ class ImageGenerationPlugin(Star):
         resolution: str,
     ) -> tuple[str, str, str]:
         """Parse a preset prompt and optional generation overrides."""
-        preset_prompt = str(preset_content or "").strip()
-        if not preset_prompt.startswith("{"):
-            return preset_prompt, aspect_ratio, resolution
-
-        try:
-            preset_data = json.loads(preset_prompt)
-        except json.JSONDecodeError:
-            return preset_prompt, aspect_ratio, resolution
-
-        if not isinstance(preset_data, dict):
-            return preset_prompt, aspect_ratio, resolution
-
-        preset_prompt = str(preset_data.get("prompt", "") or "").strip()
-        aspect_ratio = str(preset_data.get("aspect_ratio") or aspect_ratio)
-        resolution = str(preset_data.get("resolution") or resolution)
-        return preset_prompt, aspect_ratio, resolution
+        return parse_preset_prompt(preset_content, aspect_ratio, resolution)
 
     def _parse_command_prompt_templates(
         self,
@@ -451,21 +431,7 @@ class ImageGenerationPlugin(Star):
         matched_personas: list[str],
     ) -> tuple[str | None, str]:
         """Format matched preset/persona names for task metadata."""
-        if matched_presets and matched_personas:
-            return (
-                "；".join(
-                    (
-                        f"预设: {'、'.join(matched_presets)}",
-                        f"人设: {'、'.join(matched_personas)}",
-                    )
-                ),
-                "预设/人设",
-            )
-        if matched_presets:
-            return "、".join(matched_presets), "预设"
-        if matched_personas:
-            return "、".join(matched_personas), "人设"
-        return None, "预设"
+        return format_template_summary(matched_presets, matched_personas)
 
     def _format_start_template_values(
         self,
@@ -475,16 +441,13 @@ class ImageGenerationPlugin(Star):
         personas: list[str] | None,
     ) -> dict[str, str]:
         """Build preset/persona placeholder values for the start-task template."""
-        preset_names = "、".join(presets or [])
-        persona_names = "、".join(personas or [])
-        return {
-            "preset": preset_names or (preset or ""),
-            "presets": preset_names,
-            "persona": persona_names,
-            "personas": persona_names,
-            "preset_block": f"[预设: {preset_names}]" if preset_names else "",
-            "persona_block": f"[人设: {persona_names}]" if persona_names else "",
-        }
+        from .core.result_formatter import format_start_template_values
+
+        return format_start_template_values(
+            preset=preset,
+            presets=presets,
+            personas=personas,
+        )
 
     def format_start_task_message(
         self,
@@ -501,132 +464,31 @@ class ImageGenerationPlugin(Star):
         task_id: str,
     ) -> str:
         """Render start-task message from configured template."""
-        template = self.config_manager.start_task_message_template
-        if not template.strip():
-            return ""
-
-        model = ""
-        if self.config_manager.adapter_config:
-            model = (
-                f"{self.config_manager.adapter_config.name}/"
-                f"{self.config_manager.adapter_config.model}"
-            )
-
-        values = _SafeFormatDict(
-            reference_image_count=str(reference_image_count),
-            image_count=str(image_count),
-            count=str(image_count),
+        return render_start_task_message(
+            self.config_manager,
             prompt=prompt,
+            reference_image_count=reference_image_count,
+            image_count=image_count,
+            preset=preset,
+            preset_label=preset_label,
+            presets=presets,
+            personas=personas,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             task_id=task_id,
-            model=model,
-            mode="图生图" if reference_image_count else "文生图",
-            preset_label=preset_label,
-            image_count_block=f"[数量: {image_count}张]" if image_count > 1 else "",
-            count_block=f"[数量: {image_count}张]" if image_count > 1 else "",
-            reference_images_block=(
-                f"[{reference_image_count}张参考图]" if reference_image_count else ""
-            ),
-            **self._format_start_template_values(
-                preset=preset,
-                presets=presets,
-                personas=personas,
-            ),
         )
-
-        try:
-            return template.format_map(values)
-        except Exception as exc:
-            logger.warning(f"{LOG} 开始任务提示模板格式化失败: {exc}")
-            return (
-                "已开始生图任务{reference_images_block}{preset_block}"
-                "{persona_block}{image_count_block} [任务ID: {task_id}]"
-            ).format_map(values)
 
     def format_task_detail(self, record: GenerationTaskRecord) -> str:
         """Format one task record for command output."""
-        lines = [f"🧾 任务 {record.task_id}: {record.status_label}"]
-        lines.append(f"来源: {record.source}")
-        lines.append(f"提示词: {record.prompt_summary or '无'}")
-        lines.append(f"数量: {record.result_count}/{record.requested_count}张")
-        lines.append(f"参考图: {record.reference_image_count}张")
-        lines.append(f"宽高比: {record.aspect_ratio}，分辨率: {record.resolution}")
-        if record.max_retry_attempts:
-            progress = f"第 {record.current_index}/{record.requested_count} 张"
-            lines.append(
-                f"重试: {progress}，{record.retry_attempt}/{record.max_retry_attempts}"
-            )
-        if record.preset:
-            lines.append(f"{record.preset_label}: {record.preset}")
-
-        if record.started_at:
-            duration = record.duration_seconds
-            if duration is not None:
-                lines.append(f"耗时: {duration:.2f}s")
-        else:
-            lines.append(f"排队: {record.queued_seconds:.2f}s")
-
-        if record.message:
-            lines.append(f"说明: {record.message}")
-        if record.items:
-            lines.append("子请求:")
-            for item in sorted(
-                record.items.values(), key=lambda task_item: task_item.index
-            ):
-                if item.status == "succeeded":
-                    item_line = f"  {item.index}. 成功 {item.result_count}张"
-                elif item.status == "failed":
-                    item_line = f"  {item.index}. 失败"
-                else:
-                    item_line = f"  {item.index}. 运行中"
-                if item.max_retry_attempts:
-                    item_line += (
-                        f"，重试 {item.retry_attempts}/{item.max_retry_attempts}"
-                    )
-                lines.append(item_line)
-        return "\n".join(lines)
+        return render_task_detail(record)
 
     def format_task_list(self, records: list[GenerationTaskRecord]) -> str:
         """Format a compact task list for command output."""
-        if not records:
-            return "📭 当前没有正在进行的生图任务"
-
-        lines = ["📋 正在进行的生图任务:"]
-        for index, record in enumerate(records, 1):
-            parts = [
-                f"{record.task_id}",
-                record.status_label,
-                record.source,
-                f"数量{record.result_count}/{record.requested_count}张",
-                f"参考图{record.reference_image_count}张",
-            ]
-            lines.append(f"{index}. " + " | ".join(parts))
-        lines.append(
-            "\n用法: \n/生图任务 <编号或任务ID> 查看详情\n/生图取消 <编号或任务ID> 取消任务"
-        )
-        return "\n".join(lines)
+        return render_task_list(records)
 
     def format_image_command_help(self) -> str:
         """Format help text for the image generation command."""
-        adapter_config = self.config_manager.adapter_config
-        current_model = (
-            f"{adapter_config.name}/{adapter_config.model}"
-            if adapter_config
-            else "未配置"
-        )
-        lines = [
-            "🎨 生图帮助",
-            f"当前模型: {current_model}",
-            "",
-            "指令列表:",
-            "/生图 [预设/人设] [提示词] [数量]",
-            "/生图模型 - 查看或切换模型",
-            "/生图任务 [编号或任务ID]- 查看正在进行的任务",
-            "/生图取消 <编号或任务ID> - 取消指定任务",
-            "/预设 [添加/删除] - 查看或管理预设/人设",
-        ]
-        return "\n".join(lines)
+        return render_image_command_help(self.config_manager)
 
     def resolve_task_reference(
         self,
@@ -697,9 +559,7 @@ class ImageGenerationPlugin(Star):
             return
 
         if not task_id:
-            task_id = hashlib.md5(
-                f"{time.time()}{unified_msg_origin}".encode()
-            ).hexdigest()[:8]
+            task_id = new_task_id()
 
         capabilities = self.generator.adapter.get_capabilities()
 
@@ -904,43 +764,15 @@ class ImageGenerationPlugin(Star):
             )
             return
 
-        info_parts = []
-        if self.config_manager.should_show_result_info(RESULT_INFO_DURATION):
-            info_parts.append(f"📊 耗时: {duration:.2f}s")
-
-        if (
-            self.config_manager.should_show_result_info(RESULT_INFO_MODEL)
-            and self.config_manager.adapter_config
-        ):
-            info_parts.append(
-                f"🤖 模型: {self.config_manager.adapter_config.name}/{self.config_manager.adapter_config.model}"
-            )
-
-        if self.config_manager.should_show_result_info(RESULT_INFO_COUNT):
-            info_parts.append(f"🖼️ 数量: {len(generated_file_paths)}张")
-
-        if self.config_manager.should_show_result_info(RESULT_INFO_TASK_ID):
-            info_parts.append(f"🧾 任务ID: {task_id}")
-
-        if (
-            self.config_manager.should_show_result_info(RESULT_INFO_USAGE)
-            and self.usage_manager.is_daily_limit_enabled()
-        ):
-            count = self.usage_manager.get_usage_count(unified_msg_origin)
-            daily_limit = (
-                "∞"
-                if self.usage_manager.is_limit_exempt(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                )
-                else str(self.usage_manager.get_daily_limit())
-            )
-            info_parts.append(f"📅 今日用量: {count}/{daily_limit}")
-
-        if info_parts:
-            info_message = "\n".join(info_parts)
-        else:
-            info_message = ""
+        info_message = build_result_info_message(
+            self.config_manager,
+            self.usage_manager,
+            unified_msg_origin=unified_msg_origin,
+            is_usage_limit_admin=is_usage_limit_admin,
+            duration=duration,
+            result_count=len(generated_file_paths),
+            task_id=task_id,
+        )
 
         sent_batches, send_errors = await self._send_generated_images(
             unified_msg_origin,
@@ -1334,7 +1166,7 @@ class ImageGenerationPlugin(Star):
                 yield event.plain_result(check_result)
             return
 
-        task_id = hashlib.md5(f"{time.time()}{user_id}".encode()).hexdigest()[:8]
+        task_id = new_task_id()
         images_data: list[ImageData] | None = None
         if self.generator.adapter.get_capabilities() & ImageCapability.IMAGE_TO_IMAGE:
             try:

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,9 +15,15 @@ from .reference_collector import (
     collect_reference_images_from_personas,
     deduplicate_reference_images,
     download_reference_images,
-    normalize_string_items,
 )
 from .task_manager import GenerationTaskRecord
+from .task_id import new_task_id
+from .template_utils import (
+    find_named_entry,
+    format_template_summary,
+    normalize_name_items,
+    parse_preset_prompt,
+)
 from .types import ImageCapability, ImageData
 
 
@@ -120,7 +124,7 @@ class ImageGenerationPublicAPI:
         scope = str(unified_msg_origin or "").strip()
         use_usage_scope = bool(scope)
         safe_is_admin = bool(is_admin) if use_usage_scope else False
-        task_id = self._new_task_id(scope=scope, source=request_source)
+        task_id = self._new_task_id()
 
         requested_count = plugin.normalize_image_count(
             image_count
@@ -411,33 +415,14 @@ class ImageGenerationPublicAPI:
             duration_seconds=record.duration_seconds,
         )
 
-    def _new_task_id(self, *, scope: str, source: str) -> str:
-        digest = hashlib.md5(f"{time.time()}{scope}{source}".encode()).hexdigest()
-        return digest[:8]
+    def _new_task_id(self) -> str:
+        return new_task_id()
 
     def _normalize_name_items(self, raw: Any) -> list[str]:
-        names: list[str] = []
-        seen: set[str] = set()
-        for item in normalize_string_items(raw):
-            for name in item.split():
-                normalized = name.strip()
-                if not normalized:
-                    continue
-                lowered = normalized.lower()
-                if lowered in seen:
-                    continue
-                seen.add(lowered)
-                names.append(normalized)
-        return names
+        return normalize_name_items(raw)
 
     def _find_named_entry(self, entries: dict[str, Any], token: str) -> str | None:
-        if token in entries:
-            return token
-        lowered_token = token.lower()
-        for name in entries:
-            if name.lower() == lowered_token:
-                return name
-        return None
+        return find_named_entry(entries, token)
 
     def _parse_preset_prompt(
         self,
@@ -445,21 +430,7 @@ class ImageGenerationPublicAPI:
         aspect_ratio: str,
         resolution: str,
     ) -> tuple[str, str, str]:
-        preset_prompt = str(preset_content or "").strip()
-        if not preset_prompt.startswith("{"):
-            return preset_prompt, aspect_ratio, resolution
-
-        try:
-            preset_data = json.loads(preset_prompt)
-        except json.JSONDecodeError:
-            return preset_prompt, aspect_ratio, resolution
-        if not isinstance(preset_data, dict):
-            return preset_prompt, aspect_ratio, resolution
-
-        preset_prompt = str(preset_data.get("prompt", "") or "").strip()
-        aspect_ratio = str(preset_data.get("aspect_ratio") or aspect_ratio)
-        resolution = str(preset_data.get("resolution") or resolution)
-        return preset_prompt, aspect_ratio, resolution
+        return parse_preset_prompt(preset_content, aspect_ratio, resolution)
 
     def _build_prompt(
         self,
@@ -549,21 +520,7 @@ class ImageGenerationPublicAPI:
         matched_presets: list[str],
         matched_personas: list[str],
     ) -> tuple[str | None, str]:
-        if matched_presets and matched_personas:
-            return (
-                "；".join(
-                    (
-                        f"预设: {'、'.join(matched_presets)}",
-                        f"人设: {'、'.join(matched_personas)}",
-                    )
-                ),
-                "预设/人设",
-            )
-        if matched_presets:
-            return "、".join(matched_presets), "预设"
-        if matched_personas:
-            return "、".join(matched_personas), "人设"
-        return None, "预设"
+        return format_template_summary(matched_presets, matched_personas)
 
     async def _collect_reference_images(
         self,
