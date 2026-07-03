@@ -177,8 +177,6 @@ class UsageManager:
         """记录用户使用次数。"""
         if not self._settings.enable_daily_limit:
             return
-        if self.is_limit_exempt(user_id, is_admin=is_admin):
-            return
 
         count = max(1, count)
         today = self._today()
@@ -230,8 +228,6 @@ class UsageManager:
     ) -> None:
         """Record actual usage and release the matching reservation."""
         if not self._settings.enable_daily_limit:
-            return
-        if self.is_limit_exempt(user_id, is_admin=is_admin):
             return
 
         user_id = str(user_id or "").strip()
