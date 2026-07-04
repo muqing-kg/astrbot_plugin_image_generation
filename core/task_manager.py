@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
+import json
+import os
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
@@ -184,6 +187,7 @@ class TaskManager:
         self,
         generation_history_limit: int = DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
         max_queued_generation_tasks: int = 20,
+        persistence_file: str | Path | None = None,
     ):
         self.background_tasks: set[asyncio.Task] = set()
         self._loop_tasks: dict[str, asyncio.Task] = {}
@@ -211,6 +215,9 @@ class TaskManager:
         self._generation_worker_sequence = 0
         self._accepting_generation_tasks = False
         self._generation_shutdown = False
+        self._generation_persistence_file = (
+            Path(persistence_file) if persistence_file else None
+        )
 
     def create_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
@@ -289,6 +296,7 @@ class TaskManager:
         self._generation_queue.put_nowait(
             GenerationQueueItem(task_id=task_id, coro_factory=coro_factory)
         )
+        self._save_generation_tasks()
         logger.info(
             f"{log_prefix('Task', task_id)} 已提交生图任务: "
             f"{_task_creation_summary(record)}"
@@ -298,6 +306,80 @@ class TaskManager:
             f"提示词={safe_log_text(prompt, 80)}"
         )
         return record
+
+    def load_generation_history(self) -> None:
+        """Load persisted generation task history from disk."""
+        if not self._generation_persistence_file:
+            return
+        persistence_file = self._generation_persistence_file
+        if not persistence_file.exists():
+            return
+
+        try:
+            with persistence_file.open(encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as exc:
+            logger.error(f"{LOG} 加载生图任务历史失败: {exc}", exc_info=True)
+            corrupt_path = persistence_file.with_name(
+                f"{persistence_file.name}.{datetime.now().strftime('%Y%m%d%H%M%S')}.corrupt"
+            )
+            try:
+                os.replace(persistence_file, corrupt_path)
+            except Exception as rename_exc:
+                logger.error(
+                    f"{LOG} 保留损坏生图任务历史失败: {rename_exc}",
+                    exc_info=True,
+                )
+            self._generation_tasks = {}
+            return
+
+        raw_tasks = payload.get("tasks", []) if isinstance(payload, dict) else []
+        if isinstance(raw_tasks, dict):
+            raw_tasks = list(raw_tasks.values())
+        if not isinstance(raw_tasks, list):
+            raw_tasks = []
+
+        restored_tasks: dict[str, GenerationTaskRecord] = {}
+        history_changed = False
+        now = datetime.now()
+        for raw_record in raw_tasks:
+            if not isinstance(raw_record, dict):
+                history_changed = True
+                continue
+            record = self._generation_record_from_dict(raw_record)
+            if not record:
+                history_changed = True
+                continue
+            if record.status in ACTIVE_GENERATION_STATUSES:
+                record.status = GenerationTaskStatus.CANCELLED
+                record.message = "插件重启导致任务中断"
+                record.error = "插件重启导致任务中断"
+                record.finished_at = record.finished_at or now
+                self._mark_unfinished_generation_items(
+                    record,
+                    status="cancelled",
+                    error=record.error,
+                )
+                history_changed = True
+            restored_tasks[record.task_id] = record
+
+        self._generation_tasks = restored_tasks
+        self._generation_terminal_callbacks.clear()
+        self._generation_done_callbacks.clear()
+        self._generation_done_events.clear()
+        self._generation_terminal_notified = {
+            task_id
+            for task_id, record in restored_tasks.items()
+            if record.status in TERMINAL_GENERATION_STATUSES
+        }
+        history_changed = self._trim_generation_history() or history_changed
+        if history_changed:
+            self._save_generation_tasks()
+        logger.info(f"{LOG} 已加载生图任务历史: {len(self._generation_tasks)} 条")
+
+    def flush_generation_history(self) -> None:
+        """Persist the current generation task history immediately."""
+        self._save_generation_tasks()
 
     def configure_generation_queue(self, *, max_queued_generation_tasks: int) -> None:
         """Update generation queue capacity for newly submitted tasks.
@@ -314,6 +396,206 @@ class TaskManager:
             for record in self._generation_tasks.values()
             if record.status == GenerationTaskStatus.QUEUED
         )
+
+    def _save_generation_tasks(self) -> None:
+        """Persist serializable generation task metadata to disk."""
+        if not self._generation_persistence_file:
+            return
+        payload = {
+            "version": 1,
+            "updated_at": datetime.now().isoformat(),
+            "tasks": [
+                self._generation_record_to_dict(record)
+                for record in self._generation_tasks.values()
+            ],
+        }
+        target_file = self._generation_persistence_file
+        temp_file = target_file.with_name(f"{target_file.name}.tmp")
+        try:
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            with temp_file.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(temp_file, target_file)
+        except Exception as exc:
+            logger.error(f"{LOG} 保存生图任务历史失败: {exc}", exc_info=True)
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except Exception:
+                pass
+
+    def _generation_record_to_dict(
+        self,
+        record: GenerationTaskRecord,
+    ) -> dict[str, Any]:
+        """Convert a generation task record to JSON-safe metadata."""
+        return {
+            "task_id": record.task_id,
+            "source": record.source,
+            "unified_msg_origin": record.unified_msg_origin,
+            "prompt_summary": record.prompt_summary,
+            "reference_image_count": record.reference_image_count,
+            "requested_count": record.requested_count,
+            "result_count": record.result_count,
+            "aspect_ratio": record.aspect_ratio,
+            "resolution": record.resolution,
+            "preset": record.preset,
+            "preset_label": record.preset_label,
+            "status": record.status.value,
+            "message": record.message,
+            "error": record.error,
+            "created_at": self._datetime_to_str(record.created_at),
+            "started_at": self._datetime_to_str(record.started_at),
+            "finished_at": self._datetime_to_str(record.finished_at),
+            "result_paths": list(record.result_paths),
+            "current_index": record.current_index,
+            "retry_attempt": record.retry_attempt,
+            "max_retry_attempts": record.max_retry_attempts,
+            "items": [
+                self._generation_item_to_dict(item)
+                for item in sorted(record.items.values(), key=lambda item: item.index)
+            ],
+            "usage_scope": record.usage_scope,
+            "reserved_count": record.reserved_count,
+            "quota_released": record.quota_released,
+            "quota_settled": record.quota_settled,
+        }
+
+    def _generation_item_to_dict(self, item: GenerationTaskItem) -> dict[str, Any]:
+        """Convert one generation sub-request item to JSON-safe metadata."""
+        return {
+            "index": item.index,
+            "status": item.status,
+            "result_count": item.result_count,
+            "error": item.error,
+            "retry_attempts": item.retry_attempts,
+            "max_retry_attempts": item.max_retry_attempts,
+        }
+
+    def _generation_record_from_dict(
+        self,
+        raw_record: dict[str, Any],
+    ) -> GenerationTaskRecord | None:
+        """Restore one generation task record from persisted metadata."""
+        task_id = str(raw_record.get("task_id") or "").strip()
+        if not task_id:
+            return None
+        requested_count = self._safe_int(raw_record.get("requested_count"), 1, 1)
+        try:
+            status = GenerationTaskStatus(str(raw_record.get("status") or "failed"))
+        except ValueError:
+            status = GenerationTaskStatus.FAILED
+
+        record = GenerationTaskRecord(
+            task_id=task_id,
+            source=str(raw_record.get("source") or "历史记录"),
+            unified_msg_origin=str(raw_record.get("unified_msg_origin") or ""),
+            prompt_summary=safe_log_text(raw_record.get("prompt_summary") or "", 80),
+            reference_image_count=self._safe_int(
+                raw_record.get("reference_image_count"),
+                0,
+                0,
+            ),
+            requested_count=requested_count,
+            aspect_ratio=str(raw_record.get("aspect_ratio") or ""),
+            resolution=str(raw_record.get("resolution") or ""),
+            preset=(
+                str(raw_record.get("preset")) if raw_record.get("preset") else None
+            ),
+            preset_label=str(raw_record.get("preset_label") or "预设"),
+            status=status,
+            created_at=self._str_to_datetime(raw_record.get("created_at"))
+            or datetime.now(),
+            started_at=self._str_to_datetime(raw_record.get("started_at")),
+            finished_at=self._str_to_datetime(raw_record.get("finished_at")),
+            message=str(raw_record.get("message") or ""),
+            error=safe_log_text(raw_record.get("error") or "", 300),
+            result_count=self._safe_int(raw_record.get("result_count"), 0, 0),
+            result_paths=self._safe_str_list(raw_record.get("result_paths")),
+            current_index=self._safe_int(raw_record.get("current_index"), 0, 0),
+            retry_attempt=self._safe_int(raw_record.get("retry_attempt"), 0, 0),
+            max_retry_attempts=self._safe_int(
+                raw_record.get("max_retry_attempts"),
+                0,
+                0,
+            ),
+            items=self._generation_items_from_raw(
+                raw_record.get("items"),
+                requested_count,
+            ),
+            usage_scope=str(raw_record.get("usage_scope") or ""),
+            reserved_count=self._safe_int(raw_record.get("reserved_count"), 0, 0),
+            quota_released=bool(raw_record.get("quota_released", False)),
+            quota_settled=bool(raw_record.get("quota_settled", False)),
+        )
+        return record
+
+    def _generation_items_from_raw(
+        self,
+        raw_items: Any,
+        requested_count: int,
+    ) -> dict[int, GenerationTaskItem]:
+        """Restore sub-request items from list or legacy dict forms."""
+        items: dict[int, GenerationTaskItem] = {}
+        iterable: list[Any]
+        if isinstance(raw_items, dict):
+            iterable = list(raw_items.values())
+        elif isinstance(raw_items, list):
+            iterable = raw_items
+        else:
+            iterable = []
+
+        for raw_item in iterable:
+            if not isinstance(raw_item, dict):
+                continue
+            index = self._safe_int(raw_item.get("index"), 0, 1)
+            if index <= 0:
+                continue
+            items[index] = GenerationTaskItem(
+                index=index,
+                status=str(raw_item.get("status") or "pending"),
+                result_count=self._safe_int(raw_item.get("result_count"), 0, 0),
+                error=safe_log_text(raw_item.get("error") or "", 200),
+                retry_attempts=self._safe_int(raw_item.get("retry_attempts"), 0, 0),
+                max_retry_attempts=self._safe_int(
+                    raw_item.get("max_retry_attempts"),
+                    0,
+                    0,
+                ),
+            )
+
+        for index in range(1, max(1, requested_count) + 1):
+            items.setdefault(index, GenerationTaskItem(index=index))
+        return items
+
+    def _datetime_to_str(self, value: datetime | None) -> str | None:
+        """Serialize a datetime to ISO text."""
+        return value.isoformat() if value else None
+
+    def _str_to_datetime(self, value: Any) -> datetime | None:
+        """Parse an ISO datetime string defensively."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    def _safe_int(self, value: Any, default: int, minimum: int) -> int:
+        """Coerce a value to int and clamp it to a minimum."""
+        if isinstance(value, bool):
+            return default
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(minimum, parsed)
+
+    def _safe_str_list(self, value: Any) -> list[str]:
+        """Return only string entries from a persisted list."""
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value if isinstance(item, str) and item]
 
     def start_generation_workers(self, worker_count: int) -> None:
         """Start generation workers and allow new generation tasks.
@@ -635,6 +917,7 @@ class TaskManager:
             f"{log_prefix('Task', task_id)} 生图任务开始运行: "
             f"排队={format_seconds(record.queued_seconds)}"
         )
+        self._save_generation_tasks()
 
     def update_generation_task_references(
         self,
@@ -757,6 +1040,7 @@ class TaskManager:
             f"来源={safe_log_text(record.source)}，{_task_elapsed(record)}，"
             f"结果={record.result_count}张"
         )
+        self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)
 
     def mark_generation_task_failed(self, task_id: str, error: str) -> None:
@@ -773,6 +1057,7 @@ class TaskManager:
             f"{log_prefix('Task', task_id)} 生图任务失败: "
             f"{_task_elapsed(record)}，错误={record.error}"
         )
+        self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)
 
     def mark_generation_task_cancelled(
@@ -790,18 +1075,21 @@ class TaskManager:
             f"{log_prefix('Task', task_id)} 生图任务已取消: "
             f"{_task_elapsed(record)}，原因={format_optional(reason)}"
         )
+        self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)
 
     def mark_generation_task_quota_released(self, task_id: str) -> None:
         """Mark that the task's reserved quota has been released."""
         if record := self._generation_tasks.get(task_id):
             record.quota_released = True
+            self._save_generation_tasks()
 
     def mark_generation_task_quota_settled(self, task_id: str) -> None:
         """Mark that the task's reserved quota has been settled."""
         if record := self._generation_tasks.get(task_id):
             record.quota_settled = True
             record.quota_released = True
+            self._save_generation_tasks()
 
     def mark_unfinished_generation_task_items_cancelled(
         self,
@@ -883,14 +1171,17 @@ class TaskManager:
             self._generation_done_events.pop(task_id, None)
             self._generation_terminal_notified.discard(task_id)
             removed += 1
+        if removed:
+            self._save_generation_tasks()
         return removed
 
-    def _trim_generation_history(self) -> None:
+    def _trim_generation_history(self) -> bool:
         """Keep finished task history bounded while preserving active tasks."""
         overflow = len(self._generation_tasks) - self._generation_history_limit
         if overflow <= 0:
-            return
+            return False
 
+        changed = False
         for task_id, record in list(self._generation_tasks.items()):
             if overflow <= 0:
                 break
@@ -902,6 +1193,8 @@ class TaskManager:
             self._generation_done_events.pop(task_id, None)
             self._generation_terminal_notified.discard(task_id)
             overflow -= 1
+            changed = True
+        return changed
 
     def start_loop_task(
         self,
@@ -1150,4 +1443,5 @@ class TaskManager:
         self._generation_workers.clear()
         self._running_generation_tasks.clear()
         self._generation_worker_target_count = 0
+        self._save_generation_tasks()
         logger.debug(f"{LOG} 所有后台任务已取消")

@@ -106,7 +106,8 @@ class ImageGenerationPlugin(Star):
 
         # 初始化任务管理器
         self.task_manager = TaskManager(
-            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks,
+            persistence_file=self.data_dir / "generation_tasks.json",
         )
 
         # 初始化 LLM 工具结果处理器
@@ -147,15 +148,16 @@ class ImageGenerationPlugin(Star):
         else:
             logger.error(f"{LOG} 适配器配置加载失败，插件未初始化")
 
-        # 注册 LLM 工具
-        self._register_llm_tools()
-
+        self.task_manager.load_generation_history()
         self.task_manager.configure_generation_queue(
             max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
         )
         self.task_manager.start_generation_workers(
             self.config_manager.max_running_generation_tasks
         )
+
+        # 注册 LLM 工具
+        self._register_llm_tools()
 
         # 配置定时任务
         self._setup_tasks()
@@ -170,9 +172,9 @@ class ImageGenerationPlugin(Star):
     async def terminate(self):
         """插件卸载时调用"""
         try:
+            await self.task_manager.cancel_all()
             if self.generator:
                 await self.generator.close()
-            await self.task_manager.cancel_all()
             logger.info(f"{LOG} 插件已卸载")
         except Exception as exc:
             logger.error(f"{LOG} 卸载清理出错: {exc}", exc_info=True)
