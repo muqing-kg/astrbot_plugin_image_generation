@@ -18,6 +18,7 @@ from .reference_collector import (
     download_reference_images,
 )
 from .task_manager import GenerationTaskRecord
+from .task_manager import GenerationTaskCreationError
 from .task_id import new_task_id
 from .template_utils import (
     find_named_entry,
@@ -43,6 +44,10 @@ class PublicAPIResultCode(str, Enum):
     EMPTY_PROMPT = "empty_prompt"
     RATE_LIMITED = "rate_limited"
     PROMPT_BLOCKED = "prompt_blocked"
+    QUEUE_FULL = "queue_full"
+    REJECTED = "rejected"
+    TASK_MANAGER_CLOSED = "task_manager_closed"
+    TASK_ID_CONFLICT = "task_id_conflict"
     CANCEL_REQUESTED = "cancel_requested"
     CANCEL_FAILED = "cancel_failed"
     NOT_FOUND = "not_found"
@@ -249,22 +254,29 @@ class ImageGenerationPublicAPI:
             matched_presets,
             matched_personas,
         )
-        record = plugin.create_generation_task(
-            task_id=task_id,
-            source=request_source,
-            prompt=final_prompt,
-            images_data=references,
-            unified_msg_origin=scope,
-            aspect_ratio=str(final_aspect_ratio),
-            resolution=str(final_resolution),
-            image_count=requested_count,
-            is_usage_limit_admin=safe_is_admin,
-            preset=preset_summary,
-            preset_label=preset_label,
-            presets=matched_presets,
-            personas=matched_personas,
-            auto_send=False,
-        )
+        try:
+            record = plugin.create_generation_task(
+                task_id=task_id,
+                source=request_source,
+                prompt=final_prompt,
+                images_data=references,
+                unified_msg_origin=scope,
+                aspect_ratio=str(final_aspect_ratio),
+                resolution=str(final_resolution),
+                image_count=requested_count,
+                is_usage_limit_admin=safe_is_admin,
+                preset=preset_summary,
+                preset_label=preset_label,
+                presets=matched_presets,
+                personas=matched_personas,
+                auto_send=False,
+            )
+        except GenerationTaskCreationError as exc:
+            return self._submit_error(
+                self._task_creation_error_code(exc.code),
+                exc.message,
+                error=exc.code,
+            )
         return ImageGenerationSubmitResult(
             ok=True,
             code=PublicAPIResultCode.ACCEPTED.value,
@@ -437,6 +449,15 @@ class ImageGenerationPublicAPI:
             message=message,
             error=error or message,
         )
+
+    def _task_creation_error_code(self, code: str) -> PublicAPIResultCode:
+        if code == PublicAPIResultCode.QUEUE_FULL.value:
+            return PublicAPIResultCode.QUEUE_FULL
+        if code == PublicAPIResultCode.TASK_MANAGER_CLOSED.value:
+            return PublicAPIResultCode.TASK_MANAGER_CLOSED
+        if code == PublicAPIResultCode.TASK_ID_CONFLICT.value:
+            return PublicAPIResultCode.TASK_ID_CONFLICT
+        return PublicAPIResultCode.REJECTED
 
     def _snapshot(
         self,

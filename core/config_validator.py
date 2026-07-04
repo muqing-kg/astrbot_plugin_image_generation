@@ -34,6 +34,8 @@ MIN_NUMBER_VALUES: dict[str, int | float] = {
     "generation.non_retryable_status_codes": 100,
     "generation.non_retryable_status_codes.*": 100,
     "generation.max_concurrent_tasks": 1,
+    "generation.max_running_generation_tasks": 1,
+    "generation.max_queued_generation_tasks": 1,
     "generation.default_image_count": 1,
     "generation.max_image_count": 1,
     "generation.max_images_per_message": 1,

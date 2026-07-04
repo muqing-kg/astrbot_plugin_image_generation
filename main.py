@@ -56,7 +56,12 @@ from .core.result_formatter import (
 )
 from .core.safety_auditor import SafetyAuditor
 from .core.task_id import new_task_id
-from .core.task_manager import GenerationTaskRecord, GenerationTaskStatus, TaskManager
+from .core.task_manager import (
+    GenerationTaskCreationError,
+    GenerationTaskRecord,
+    GenerationTaskStatus,
+    TaskManager,
+)
 from .core.template_utils import (
     find_named_entry,
     format_template_summary,
@@ -100,7 +105,9 @@ class ImageGenerationPlugin(Star):
         )
 
         # 初始化任务管理器
-        self.task_manager = TaskManager()
+        self.task_manager = TaskManager(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
 
         # 初始化 LLM 工具结果处理器
         self.llm_result_handler = LLMResultHandler(
@@ -133,13 +140,22 @@ class ImageGenerationPlugin(Star):
                 f"{LOG} 初始化生图生成器: "
                 f"供应商={safe_log_text(self.config_manager.adapter_config.name)}，"
                 f"模型={safe_log_text(self.config_manager.adapter_config.model)}，"
-                f"最大并发生图请求={self.config_manager.max_concurrent_tasks}"
+                f"最大并发生图请求={self.config_manager.max_concurrent_tasks}，"
+                f"最大并发完整任务={self.config_manager.max_running_generation_tasks}，"
+                f"最大排队任务={self.config_manager.max_queued_generation_tasks}"
             )
         else:
             logger.error(f"{LOG} 适配器配置加载失败，插件未初始化")
 
         # 注册 LLM 工具
         self._register_llm_tools()
+
+        self.task_manager.configure_generation_queue(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
+        self.task_manager.start_generation_workers(
+            self.config_manager.max_running_generation_tasks
+        )
 
         # 配置定时任务
         self._setup_tasks()
@@ -276,6 +292,12 @@ class ImageGenerationPlugin(Star):
         self.request_semaphore = asyncio.Semaphore(
             self.config_manager.max_concurrent_tasks
         )
+        self.task_manager.configure_generation_queue(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
+        self.task_manager.update_generation_worker_count(
+            self.config_manager.max_running_generation_tasks
+        )
 
     def create_generation_task(
         self,
@@ -303,8 +325,9 @@ class ImageGenerationPlugin(Star):
                 personas or [],
             )
         image_count = self.normalize_image_count(image_count)
-        record = self.task_manager.create_generation_task(
-            self._generate_and_send_image_async(
+
+        def _generation_coro_factory():
+            return self._generate_and_send_image_async(
                 prompt=prompt,
                 images_data=images_data or None,
                 unified_msg_origin=unified_msg_origin,
@@ -315,22 +338,33 @@ class ImageGenerationPlugin(Star):
                 is_usage_limit_admin=is_usage_limit_admin,
                 deliver_via_ai=source == "LLM工具",
                 auto_send=auto_send,
-            ),
-            task_id=task_id,
-            source=source,
-            unified_msg_origin=unified_msg_origin,
-            prompt=prompt,
-            reference_image_count=len(images_data or []),
-            requested_count=image_count,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            preset=preset,
-            preset_label=preset_label,
-            usage_scope=unified_msg_origin,
-            reserved_count=image_count if unified_msg_origin else 0,
-            is_usage_limit_admin=is_usage_limit_admin,
-            terminal_callback=self._handle_generation_task_terminal,
-        )
+            )
+
+        try:
+            record = self.task_manager.create_generation_task(
+                _generation_coro_factory,
+                task_id=task_id,
+                source=source,
+                unified_msg_origin=unified_msg_origin,
+                prompt=prompt,
+                reference_image_count=len(images_data or []),
+                requested_count=image_count,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                preset=preset,
+                preset_label=preset_label,
+                usage_scope=unified_msg_origin,
+                reserved_count=image_count if unified_msg_origin else 0,
+                is_usage_limit_admin=is_usage_limit_admin,
+                terminal_callback=self._handle_generation_task_terminal,
+            )
+        except GenerationTaskCreationError:
+            self.usage_manager.release_reserved_usage(
+                unified_msg_origin,
+                is_admin=is_usage_limit_admin,
+                count=image_count,
+            )
+            raise
         if source == "LLM工具":
             self.llm_result_handler.attach_task_wakeup(
                 record,
@@ -1248,6 +1282,26 @@ class ImageGenerationPlugin(Star):
 
         reference_image_count = len(images_data or [])
 
+        try:
+            self.create_generation_task(
+                task_id=task_id,
+                source="指令",
+                prompt=prompt,
+                images_data=images_data,
+                unified_msg_origin=event.unified_msg_origin,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                image_count=image_count,
+                is_usage_limit_admin=is_usage_limit_admin,
+                preset=preset_or_persona,
+                preset_label=preset_label,
+                presets=matched_presets,
+                personas=matched_personas,
+            )
+        except GenerationTaskCreationError as exc:
+            yield event.plain_result(f"❌ 生图任务提交失败: {exc.message}")
+            return
+
         msg = self.format_start_task_message(
             prompt=prompt,
             reference_image_count=reference_image_count,
@@ -1262,22 +1316,6 @@ class ImageGenerationPlugin(Star):
         )
         if msg:
             yield event.plain_result(msg)
-
-        self.create_generation_task(
-            task_id=task_id,
-            source="指令",
-            prompt=prompt,
-            images_data=images_data,
-            unified_msg_origin=event.unified_msg_origin,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            image_count=image_count,
-            is_usage_limit_admin=is_usage_limit_admin,
-            preset=preset_or_persona,
-            preset_label=preset_label,
-            presets=matched_presets,
-            personas=matched_personas,
-        )
 
     @filter.command("生图模型")
     async def model_command(self, event: AstrMessageEvent, model_index: str = ""):

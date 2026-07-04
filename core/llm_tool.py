@@ -24,6 +24,7 @@ from .logging_utils import (
 )
 from .reference_collector import collect_tool_reference_images, normalize_string_items
 from .task_id import new_task_id
+from .task_manager import GenerationTaskCreationError
 from .template_utils import (
     format_template_summary,
     normalize_name_items,
@@ -336,22 +337,25 @@ async def _start_generation_task(
 
     reference_image_count = len(images_data)
 
-    plugin.create_generation_task(
-        task_id=task_id,
-        source="LLM工具",
-        prompt=prompt,
-        images_data=images_data,
-        unified_msg_origin=event.unified_msg_origin,
-        aspect_ratio=aspect_ratio,
-        resolution=resolution,
-        image_count=image_count,
-        is_usage_limit_admin=is_usage_limit_admin,
-        preset=preset_or_persona,
-        preset_label=preset_label,
-        presets=presets,
-        personas=personas,
-        source_event=event,
-    )
+    try:
+        plugin.create_generation_task(
+            task_id=task_id,
+            source="LLM工具",
+            prompt=prompt,
+            images_data=images_data,
+            unified_msg_origin=event.unified_msg_origin,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            image_count=image_count,
+            is_usage_limit_admin=is_usage_limit_admin,
+            preset=preset_or_persona,
+            preset_label=preset_label,
+            presets=presets,
+            personas=personas,
+            source_event=event,
+        )
+    except GenerationTaskCreationError as exc:
+        return f"❌ 生图任务提交失败: {exc.message} ({exc.code})"
 
     return plugin.llm_result_handler.format_tool_start_result(
         prompt=prompt,
