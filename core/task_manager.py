@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -39,6 +40,14 @@ ACTIVE_GENERATION_STATUSES = {
     GenerationTaskStatus.RUNNING,
     GenerationTaskStatus.CANCELLING,
 }
+
+TERMINAL_GENERATION_STATUSES = {
+    GenerationTaskStatus.SUCCEEDED,
+    GenerationTaskStatus.FAILED,
+    GenerationTaskStatus.CANCELLED,
+}
+
+ACTIVE_GENERATION_ITEM_STATUSES = {"pending", "running"}
 
 GENERATION_TASK_STATUS_LABELS = {
     GenerationTaskStatus.QUEUED: "排队中",
@@ -88,6 +97,11 @@ class GenerationTaskRecord:
     retry_attempt: int = 0
     max_retry_attempts: int = 0
     items: dict[int, GenerationTaskItem] = field(default_factory=dict)
+    usage_scope: str = ""
+    reserved_count: int = 0
+    is_usage_limit_admin: bool = False
+    quota_released: bool = False
+    quota_settled: bool = False
     task: asyncio.Task | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -142,6 +156,9 @@ def _task_creation_summary(record: GenerationTaskRecord) -> str:
     )
 
 
+GenerationTaskCallback = Callable[[GenerationTaskRecord], Any]
+
+
 class TaskManager:
     """Unified task manager for background, scheduled, and generation tasks."""
 
@@ -157,6 +174,12 @@ class TaskManager:
         ] = []
         self._startup_completed: bool = False
         self._generation_tasks: dict[str, GenerationTaskRecord] = {}
+        self._generation_terminal_callbacks: dict[
+            str, list[GenerationTaskCallback]
+        ] = {}
+        self._generation_done_callbacks: dict[str, list[GenerationTaskCallback]] = {}
+        self._generation_done_events: dict[str, asyncio.Event] = {}
+        self._generation_terminal_notified: set[str] = set()
         self._generation_history_limit = max(1, generation_history_limit)
 
     def create_task(
@@ -184,24 +207,39 @@ class TaskManager:
         resolution: str,
         preset: str | None = None,
         preset_label: str = "预设",
+        usage_scope: str = "",
+        reserved_count: int = 0,
+        is_usage_limit_admin: bool = False,
+        terminal_callback: GenerationTaskCallback | None = None,
     ) -> GenerationTaskRecord:
         """Create and track an image generation task."""
         if task_id in self._generation_tasks:
             logger.warning(f"{LOG} 生图任务 ID 冲突，覆盖旧记录: {_task_name(task_id)}")
 
+        safe_requested_count = max(1, requested_count)
         record = GenerationTaskRecord(
             task_id=task_id,
             source=source,
             unified_msg_origin=unified_msg_origin,
             prompt_summary=safe_log_text(prompt, 80),
             reference_image_count=reference_image_count,
-            requested_count=max(1, requested_count),
+            requested_count=safe_requested_count,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             preset=preset,
             preset_label=preset_label,
+            items={
+                index: GenerationTaskItem(index=index)
+                for index in range(1, safe_requested_count + 1)
+            },
+            usage_scope=usage_scope,
+            reserved_count=max(0, reserved_count),
+            is_usage_limit_admin=bool(is_usage_limit_admin),
         )
         self._generation_tasks[task_id] = record
+        self._generation_terminal_notified.discard(task_id)
+        if terminal_callback:
+            self.add_generation_task_terminal_callback(task_id, terminal_callback)
         self._trim_generation_history()
 
         task = asyncio.create_task(
@@ -223,6 +261,128 @@ class TaskManager:
             f"提示词={safe_log_text(prompt, 80)}"
         )
         return record
+
+    def add_generation_task_terminal_callback(
+        self,
+        task_id: str,
+        callback: GenerationTaskCallback,
+    ) -> None:
+        """Register a callback that runs before public completion notification.
+
+        Args:
+            task_id: Generation task ID to observe.
+            callback: Callback receiving the terminal task record.
+        """
+        record = self._generation_tasks.get(task_id)
+        if record and record.status in TERMINAL_GENERATION_STATUSES:
+            self._dispatch_generation_callback(callback, record, "终态业务回调")
+            return
+        self._generation_terminal_callbacks.setdefault(task_id, []).append(callback)
+
+    def add_generation_task_done_callback(
+        self,
+        task_id: str,
+        callback: GenerationTaskCallback,
+    ) -> None:
+        """Register a callback that runs once after a task reaches terminal state.
+
+        Args:
+            task_id: Generation task ID to observe.
+            callback: Callback receiving the terminal task record.
+        """
+        record = self._generation_tasks.get(task_id)
+        if record and record.status in TERMINAL_GENERATION_STATUSES:
+            self._dispatch_generation_callback(callback, record, "完成回调")
+            return
+        self._generation_done_callbacks.setdefault(task_id, []).append(callback)
+
+    async def wait_generation_task_done(
+        self,
+        task_id: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> GenerationTaskRecord | None:
+        """Wait for a generation task to reach terminal state.
+
+        Args:
+            task_id: Generation task ID to wait for.
+            timeout_seconds: Optional maximum wait time in seconds.
+
+        Returns:
+            The terminal task record, or ``None`` when the task disappears or times out.
+        """
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return None
+        if record.status in TERMINAL_GENERATION_STATUSES:
+            return record
+
+        event = self._generation_done_events.setdefault(task_id, asyncio.Event())
+        try:
+            if timeout_seconds is None:
+                await event.wait()
+            else:
+                await asyncio.wait_for(event.wait(), timeout=max(0.0, timeout_seconds))
+        except TimeoutError:
+            return None
+        return self._generation_tasks.get(task_id)
+
+    def _dispatch_generation_callback(
+        self,
+        callback: GenerationTaskCallback,
+        record: GenerationTaskRecord,
+        label: str,
+    ) -> None:
+        """Run a generation callback and isolate callback failures."""
+        try:
+            result = callback(record)
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('Task', record.task_id)} 生图任务{label}异常: {exc}",
+                exc_info=True,
+            )
+            return
+
+        if inspect.isawaitable(result):
+            self.create_task(
+                self._await_generation_callback(record.task_id, result, label),
+                name=f"image_generation_{label}:{record.task_id}",
+            )
+
+    async def _await_generation_callback(
+        self,
+        task_id: str,
+        awaitable: Any,
+        label: str,
+    ) -> None:
+        """Await an asynchronous generation callback with error isolation."""
+        try:
+            await awaitable
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('Task', task_id)} 生图任务{label}异步异常: {exc}",
+                exc_info=True,
+            )
+
+    def _notify_generation_task_terminal(self, task_id: str) -> None:
+        """Notify terminal callbacks, public callbacks, and waiters once."""
+        if task_id in self._generation_terminal_notified:
+            return
+        record = self._generation_tasks.get(task_id)
+        if not record or record.status not in TERMINAL_GENERATION_STATUSES:
+            return
+
+        self._generation_terminal_notified.add(task_id)
+        terminal_callbacks = self._generation_terminal_callbacks.pop(task_id, [])
+        for callback in terminal_callbacks:
+            self._dispatch_generation_callback(callback, record, "终态业务回调")
+
+        done_callbacks = self._generation_done_callbacks.pop(task_id, [])
+        for callback in done_callbacks:
+            self._dispatch_generation_callback(callback, record, "完成回调")
+
+        if event := self._generation_done_events.get(task_id):
+            event.set()
 
     async def _run_generation_task(
         self, task_id: str, coro: Coroutine[Any, Any, Any]
@@ -248,10 +408,68 @@ class TaskManager:
         if record := self._generation_tasks.get(task_id):
             record.task = None
 
+    def _mark_unfinished_generation_items(
+        self,
+        record: GenerationTaskRecord,
+        *,
+        status: str,
+        error: str = "",
+    ) -> None:
+        """Mark pending or running sub-requests with a final item status."""
+        safe_error = safe_log_text(error, 200) if error else ""
+        for item in record.items.values():
+            if item.status not in ACTIVE_GENERATION_ITEM_STATUSES:
+                continue
+            item.status = status
+            if safe_error and not item.error:
+                item.error = safe_error
+
+    def _enter_generation_terminal_status(
+        self,
+        task_id: str,
+        status: GenerationTaskStatus,
+        *,
+        message: str,
+        error: str = "",
+        result_count: int = 0,
+        result_paths: list[str] | None = None,
+    ) -> GenerationTaskRecord | None:
+        """Move a task into terminal state exactly once."""
+        record = self._generation_tasks.get(task_id)
+        if not record or record.status in TERMINAL_GENERATION_STATUSES:
+            return None
+
+        record.status = status
+        record.finished_at = record.finished_at or datetime.now()
+        record.message = message
+        record.error = safe_log_text(error, 300) if error else ""
+        if result_paths is not None:
+            record.result_paths = list(result_paths)
+        final_result_count = (
+            result_count or len(record.result_paths) or record.result_count
+        )
+        record.result_count = max(0, final_result_count)
+
+        if status == GenerationTaskStatus.CANCELLED:
+            self._mark_unfinished_generation_items(
+                record,
+                status="cancelled",
+                error=message,
+            )
+        elif status == GenerationTaskStatus.FAILED:
+            self._mark_unfinished_generation_items(
+                record,
+                status="failed",
+                error=record.error or message,
+            )
+        return record
+
     def mark_generation_task_running(self, task_id: str) -> None:
         """Mark a generation task as actively running."""
         record = self._generation_tasks.get(task_id)
         if not record or record.status == GenerationTaskStatus.CANCELLING:
+            return
+        if record.status in TERMINAL_GENERATION_STATUSES:
             return
         record.status = GenerationTaskStatus.RUNNING
         record.started_at = record.started_at or datetime.now()
@@ -269,7 +487,7 @@ class TaskManager:
     ) -> None:
         """Update prepared reference image metadata for a generation task."""
         record = self._generation_tasks.get(task_id)
-        if not record:
+        if not record or record.status in TERMINAL_GENERATION_STATUSES:
             return
         record.reference_image_count = max(0, reference_image_count)
 
@@ -283,7 +501,7 @@ class TaskManager:
     ) -> None:
         """Update the currently running generation retry attempt."""
         record = self._generation_tasks.get(task_id)
-        if not record:
+        if not record or record.status in TERMINAL_GENERATION_STATUSES:
             return
         record.current_index = max(1, current_index)
         record.retry_attempt = max(0, retry_attempt)
@@ -309,7 +527,7 @@ class TaskManager:
     ) -> None:
         """Record per-request generation result details."""
         record = self._generation_tasks.get(task_id)
-        if not record:
+        if not record or record.status in TERMINAL_GENERATION_STATUSES:
             return
         safe_index = max(1, index)
         item = record.items.setdefault(
@@ -330,7 +548,7 @@ class TaskManager:
     ) -> None:
         """Update image count progress for one generation task."""
         record = self._generation_tasks.get(task_id)
-        if not record:
+        if not record or record.status in TERMINAL_GENERATION_STATUSES:
             return
         record.current_index = max(1, current_index)
         record.result_count = max(0, result_count)
@@ -345,49 +563,79 @@ class TaskManager:
         message: str = "任务已完成",
     ) -> None:
         """Mark a generation task as successful."""
-        record = self._generation_tasks.get(task_id)
+        record = self._enter_generation_terminal_status(
+            task_id,
+            GenerationTaskStatus.SUCCEEDED,
+            message=message,
+            result_count=result_count,
+            result_paths=result_paths,
+        )
         if not record:
             return
-        record.status = GenerationTaskStatus.SUCCEEDED
-        record.finished_at = record.finished_at or datetime.now()
-        record.message = message
-        record.error = ""
-        record.result_count = result_count or record.result_count
-        if result_paths is not None:
-            record.result_paths = list(result_paths)
         logger.info(
             f"{log_prefix('Task', task_id)} 生图任务完成: "
             f"来源={safe_log_text(record.source)}，{_task_elapsed(record)}，"
             f"结果={record.result_count}张"
         )
+        self._notify_generation_task_terminal(task_id)
 
     def mark_generation_task_failed(self, task_id: str, error: str) -> None:
         """Mark a generation task as failed."""
-        record = self._generation_tasks.get(task_id)
+        record = self._enter_generation_terminal_status(
+            task_id,
+            GenerationTaskStatus.FAILED,
+            message="任务失败",
+            error=error,
+        )
         if not record:
             return
-        record.status = GenerationTaskStatus.FAILED
-        record.finished_at = record.finished_at or datetime.now()
-        record.error = safe_log_text(error, 300)
-        record.message = "任务失败"
         logger.warning(
             f"{log_prefix('Task', task_id)} 生图任务失败: "
             f"{_task_elapsed(record)}，错误={record.error}"
         )
+        self._notify_generation_task_terminal(task_id)
 
     def mark_generation_task_cancelled(
         self, task_id: str, reason: str = "任务已取消"
     ) -> None:
         """Mark a generation task as cancelled."""
-        record = self._generation_tasks.get(task_id)
+        record = self._enter_generation_terminal_status(
+            task_id,
+            GenerationTaskStatus.CANCELLED,
+            message=reason,
+        )
         if not record:
             return
-        record.status = GenerationTaskStatus.CANCELLED
-        record.finished_at = record.finished_at or datetime.now()
-        record.message = reason
         logger.info(
             f"{log_prefix('Task', task_id)} 生图任务已取消: "
             f"{_task_elapsed(record)}，原因={format_optional(reason)}"
+        )
+        self._notify_generation_task_terminal(task_id)
+
+    def mark_generation_task_quota_released(self, task_id: str) -> None:
+        """Mark that the task's reserved quota has been released."""
+        if record := self._generation_tasks.get(task_id):
+            record.quota_released = True
+
+    def mark_generation_task_quota_settled(self, task_id: str) -> None:
+        """Mark that the task's reserved quota has been settled."""
+        if record := self._generation_tasks.get(task_id):
+            record.quota_settled = True
+            record.quota_released = True
+
+    def mark_unfinished_generation_task_items_cancelled(
+        self,
+        task_id: str,
+        reason: str = "任务已取消",
+    ) -> None:
+        """Mark pending or running sub-requests as cancelled."""
+        record = self._generation_tasks.get(task_id)
+        if not record:
+            return
+        self._mark_unfinished_generation_items(
+            record,
+            status="cancelled",
+            error=reason,
         )
 
     def get_generation_task(self, task_id: str) -> GenerationTaskRecord | None:
@@ -424,6 +672,8 @@ class TaskManager:
             and record.unified_msg_origin != unified_msg_origin
         ):
             return False, "❌ 不能取消其他会话的生图任务"
+        if record.status == GenerationTaskStatus.CANCELLING:
+            return True, f"⏳ 任务正在取消中: {task_id}"
         if not record.is_active:
             return False, f"❌ 任务已结束，当前状态: {record.status_label}"
 
@@ -449,6 +699,10 @@ class TaskManager:
             ):
                 continue
             del self._generation_tasks[task_id]
+            self._generation_terminal_callbacks.pop(task_id, None)
+            self._generation_done_callbacks.pop(task_id, None)
+            self._generation_done_events.pop(task_id, None)
+            self._generation_terminal_notified.discard(task_id)
             removed += 1
         return removed
 
@@ -464,6 +718,10 @@ class TaskManager:
             if record.is_active:
                 continue
             del self._generation_tasks[task_id]
+            self._generation_terminal_callbacks.pop(task_id, None)
+            self._generation_done_callbacks.pop(task_id, None)
+            self._generation_done_events.pop(task_id, None)
+            self._generation_terminal_notified.discard(task_id)
             overflow -= 1
 
     def start_loop_task(

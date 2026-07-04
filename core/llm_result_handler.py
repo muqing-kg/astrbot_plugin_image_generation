@@ -65,12 +65,11 @@ class LLMResultHandler:
         source_event: AstrMessageEvent | None,
     ) -> None:
         """Attach an AI wakeup task to a completed LLM image generation task."""
-        if not source_event or not record.task:
+        if not source_event:
             return
 
-        def _on_done(_task: asyncio.Task) -> None:
-            current_record = self.task_manager.get_generation_task(record.task_id)
-            if current_record and current_record.status in {
+        def _on_done(current_record: GenerationTaskRecord) -> None:
+            if current_record.status in {
                 GenerationTaskStatus.CANCELLING,
                 GenerationTaskStatus.CANCELLED,
             }:
@@ -86,7 +85,7 @@ class LLMResultHandler:
                 f"image_generation_ai_wakeup:{record.task_id}",
             )
 
-        record.task.add_done_callback(_on_done)
+        self.task_manager.add_generation_task_done_callback(record.task_id, _on_done)
 
     def format_tool_start_result(
         self,
