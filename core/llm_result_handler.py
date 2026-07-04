@@ -123,7 +123,7 @@ class LLMResultHandler:
             "✅ 生图任务已提交，正在后台执行。",
             f"任务ID: {task_id}",
             "状态: 排队/运行中（尚未完成）",
-            f"数量: {image_count}张",
+            f"请求数量: {image_count}；结果图片数以任务完成为准",
             f"模式: {'图生图' if reference_image_count else '文生图'}",
             f"参考图: {reference_image_count}张",
             f"宽高比: {aspect_ratio}，分辨率: {resolution}",
@@ -154,6 +154,7 @@ class LLMResultHandler:
         supports_image_input: bool,
     ) -> dict[str, Any]:
         """Build structured task result context for the awakened AI."""
+        request_stats = record.request_stats
         payload: dict[str, Any] = {
             "task_id": record.task_id,
             "source": record.source,
@@ -169,6 +170,20 @@ class LLMResultHandler:
             "preset": record.preset or "",
             "result_count": record.result_count,
             "result_paths": record.result_paths,
+            "request_stats": request_stats,
+            "items": [
+                {
+                    "index": item.index,
+                    "status": item.status,
+                    "result_count": item.result_count,
+                    "error": safe_log_text(item.error, 160) if item.error else "",
+                    "retry_attempts": item.retry_attempts,
+                    "max_retry_attempts": item.max_retry_attempts,
+                }
+                for item in sorted(
+                    record.items.values(), key=lambda task_item: task_item.index
+                )
+            ],
             "error": record.error,
             "message": record.message,
             "images_attached_to_model": supports_image_input

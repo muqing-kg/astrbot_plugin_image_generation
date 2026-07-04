@@ -13,7 +13,7 @@ from .config_manager import (
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
-from .logging_utils import log_prefix
+from .logging_utils import log_prefix, safe_log_text
 
 if TYPE_CHECKING:
     from .config_manager import ConfigManager
@@ -111,19 +111,22 @@ def format_start_task_message(
 
 def format_task_detail(record: GenerationTaskRecord) -> str:
     """Format one task record for command output."""
+    stats = record.request_stats
     lines = [f"🧾 任务 {record.task_id}: {record.status_label}"]
     lines.append(f"来源: {record.source}")
     lines.append(f"提示词: {record.prompt_summary or '无'}")
-    lines.append(f"数量: {record.result_count}/{record.requested_count}张")
     lines.append(f"参考图: {record.reference_image_count}张")
     lines.append(f"宽高比: {record.aspect_ratio}，分辨率: {record.resolution}")
-    if record.max_retry_attempts:
-        progress = f"第 {record.current_index}/{record.requested_count} 张"
-        lines.append(
-            f"重试: {progress}，{record.retry_attempt}/{record.max_retry_attempts}"
-        )
     if record.preset:
         lines.append(f"{record.preset_label}: {record.preset}")
+
+    lines.append(
+        "子请求: "
+        f"{stats['finished']}/{stats['total']} 已结束"
+        f"（运行中 {stats['running']}，等待 {stats['pending']}，"
+        f"失败 {stats['failed']}，取消 {stats['cancelled']}）"
+    )
+    lines.append(f"结果图片: {stats['result_count']}张")
 
     if record.started_at:
         duration = record.duration_seconds
@@ -140,9 +143,15 @@ def format_task_detail(record: GenerationTaskRecord) -> str:
             record.items.values(), key=lambda task_item: task_item.index
         ):
             if item.status == "succeeded":
-                item_line = f"  {item.index}. 成功 {item.result_count}张"
+                item_line = f"  {item.index}. 成功，结果 {item.result_count} 张"
             elif item.status == "failed":
                 item_line = f"  {item.index}. 失败"
+                if item.error:
+                    item_line += f"，错误: {safe_log_text(item.error, 120)}"
+            elif item.status == "cancelled":
+                item_line = f"  {item.index}. 已取消"
+            elif item.status == "pending":
+                item_line = f"  {item.index}. 等待中"
             else:
                 item_line = f"  {item.index}. 运行中"
             if item.max_retry_attempts:
@@ -158,11 +167,13 @@ def format_task_list(records: list[GenerationTaskRecord]) -> str:
 
     lines = ["📋 正在进行的生图任务:"]
     for index, record in enumerate(records, 1):
+        stats = record.request_stats
         parts = [
             f"{record.task_id}",
             record.status_label,
             record.source,
-            f"数量{record.result_count}/{record.requested_count}张",
+            f"子请求{stats['finished']}/{stats['total']}",
+            f"结果{stats['result_count']}张",
             f"参考图{record.reference_image_count}张",
         ]
         lines.append(f"{index}. " + " | ".join(parts))

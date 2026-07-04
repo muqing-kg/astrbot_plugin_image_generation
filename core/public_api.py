@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -87,6 +87,13 @@ class ImageGenerationTaskSnapshot:
     started_at: datetime | None
     finished_at: datetime | None
     duration_seconds: float | None
+    request_stats: dict[str, int] = field(default_factory=dict)
+    items: list[dict[str, Any]] = field(default_factory=list)
+    finished_request_count: int = 0
+    running_request_count: int = 0
+    pending_request_count: int = 0
+    failed_request_count: int = 0
+    cancelled_request_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -463,6 +470,7 @@ class ImageGenerationPublicAPI:
         self,
         record: GenerationTaskRecord,
     ) -> ImageGenerationTaskSnapshot:
+        request_stats = record.request_stats
         return ImageGenerationTaskSnapshot(
             task_id=record.task_id,
             status=record.status.value,
@@ -480,6 +488,25 @@ class ImageGenerationPublicAPI:
             started_at=record.started_at,
             finished_at=record.finished_at,
             duration_seconds=record.duration_seconds,
+            request_stats=dict(request_stats),
+            items=[
+                {
+                    "index": item.index,
+                    "status": item.status,
+                    "result_count": item.result_count,
+                    "error": safe_log_text(item.error, 160) if item.error else "",
+                    "retry_attempts": item.retry_attempts,
+                    "max_retry_attempts": item.max_retry_attempts,
+                }
+                for item in sorted(
+                    record.items.values(), key=lambda task_item: task_item.index
+                )
+            ],
+            finished_request_count=request_stats["finished"],
+            running_request_count=request_stats["running"],
+            pending_request_count=request_stats["pending"],
+            failed_request_count=request_stats["failed"],
+            cancelled_request_count=request_stats["cancelled"],
         )
 
     def _new_task_id(self) -> str:

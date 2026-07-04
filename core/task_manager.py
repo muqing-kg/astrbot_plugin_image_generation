@@ -148,6 +148,28 @@ class GenerationTaskRecord:
         end_time = self.started_at or self.finished_at or datetime.now()
         return max(0.0, (end_time - self.created_at).total_seconds())
 
+    @property
+    def request_stats(self) -> dict[str, int]:
+        """Return normalized sub-request progress statistics."""
+        statuses = [item.status for item in self.items.values()]
+        succeeded = statuses.count("succeeded")
+        failed = statuses.count("failed")
+        cancelled = statuses.count("cancelled")
+        running = statuses.count("running")
+        pending = statuses.count("pending")
+        finished = succeeded + failed + cancelled
+        total = max(self.requested_count, len(statuses))
+        return {
+            "total": total,
+            "finished": finished,
+            "succeeded": succeeded,
+            "failed": failed,
+            "cancelled": cancelled,
+            "running": running,
+            "pending": pending,
+            "result_count": self.result_count or len(self.result_paths),
+        }
+
 
 def _task_name(name: str) -> str:
     """Return a compact task name for logs."""

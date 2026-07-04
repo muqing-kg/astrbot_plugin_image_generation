@@ -955,8 +955,8 @@ class ImageGenerationPlugin(Star):
                 current_index=current_index,
                 result_count=len(generated_file_paths),
                 message=(
-                    f"正在生成第 {current_index}/{image_count} 张，"
-                    f"已完成 {len(generated_file_paths)}/{image_count} 张"
+                    f"子请求 {current_index}/{image_count} 已调度，"
+                    f"结果图片 {len(generated_file_paths)} 张"
                 ),
             )
             task = asyncio.create_task(
@@ -1076,7 +1076,10 @@ class ImageGenerationPlugin(Star):
                         task_id,
                         current_index=min(next_index, image_count),
                         result_count=len(generated_file_paths),
-                        message=f"已生成 {len(generated_file_paths)}/{image_count} 张",
+                        message=(
+                            f"子请求 {min(next_index - 1, image_count)}/{image_count} 已完成，"
+                            f"结果图片 {len(generated_file_paths)} 张"
+                        ),
                     )
 
                     if next_index <= image_count:
