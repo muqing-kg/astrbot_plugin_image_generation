@@ -19,6 +19,7 @@ from .logging_utils import (
     format_seconds,
     log_prefix,
     mask_sensitive,
+    safe_log_error_body,
     safe_log_text,
 )
 
@@ -225,7 +226,9 @@ class TaskManager:
         ] = {}
         self._generation_done_callbacks: dict[str, list[GenerationTaskCallback]] = {}
         self._generation_done_events: dict[str, asyncio.Event] = {}
+        self._generation_terminal_notifying: set[str] = set()
         self._generation_terminal_notified: set[str] = set()
+        self._generation_notification_tasks: dict[str, asyncio.Task] = {}
         self._generation_history_limit = max(1, generation_history_limit)
         self._generation_queue: asyncio.Queue[GenerationQueueItem | None] = (
             asyncio.Queue()
@@ -389,11 +392,13 @@ class TaskManager:
         self._generation_terminal_callbacks.clear()
         self._generation_done_callbacks.clear()
         self._generation_done_events.clear()
+        self._generation_terminal_notifying.clear()
         self._generation_terminal_notified = {
             task_id
             for task_id, record in restored_tasks.items()
             if record.status in TERMINAL_GENERATION_STATUSES
         }
+        self._generation_notification_tasks.clear()
         history_changed = self._trim_generation_history() or history_changed
         if history_changed:
             self._save_generation_tasks()
@@ -530,8 +535,8 @@ class TaskManager:
             or datetime.now(),
             started_at=self._str_to_datetime(raw_record.get("started_at")),
             finished_at=self._str_to_datetime(raw_record.get("finished_at")),
-            message=str(raw_record.get("message") or ""),
-            error=safe_log_text(raw_record.get("error") or "", 300),
+            message=safe_log_error_body(raw_record.get("message") or "", 300),
+            error=safe_log_error_body(raw_record.get("error") or "", 300),
             result_count=self._safe_int(raw_record.get("result_count"), 0, 0),
             result_paths=self._safe_str_list(raw_record.get("result_paths")),
             current_index=self._safe_int(raw_record.get("current_index"), 0, 0),
@@ -577,7 +582,7 @@ class TaskManager:
                 index=index,
                 status=str(raw_item.get("status") or "pending"),
                 result_count=self._safe_int(raw_item.get("result_count"), 0, 0),
-                error=safe_log_text(raw_item.get("error") or "", 200),
+                error=safe_log_error_body(raw_item.get("error") or "", 200),
                 retry_attempts=self._safe_int(raw_item.get("retry_attempts"), 0, 0),
                 max_retry_attempts=self._safe_int(
                     raw_item.get("max_retry_attempts"),
@@ -736,7 +741,11 @@ class TaskManager:
         """
         record = self._generation_tasks.get(task_id)
         if record and record.status in TERMINAL_GENERATION_STATUSES:
-            self._dispatch_generation_callback(callback, record, "终态业务回调")
+            if task_id in self._generation_terminal_notified:
+                self._dispatch_generation_callback(callback, record, "终态业务回调")
+                return
+            self._generation_terminal_callbacks.setdefault(task_id, []).append(callback)
+            self._notify_generation_task_terminal(task_id)
             return
         self._generation_terminal_callbacks.setdefault(task_id, []).append(callback)
 
@@ -753,7 +762,11 @@ class TaskManager:
         """
         record = self._generation_tasks.get(task_id)
         if record and record.status in TERMINAL_GENERATION_STATUSES:
-            self._dispatch_generation_callback(callback, record, "完成回调")
+            if task_id in self._generation_terminal_notified:
+                self._dispatch_generation_callback(callback, record, "完成回调")
+                return
+            self._generation_done_callbacks.setdefault(task_id, []).append(callback)
+            self._notify_generation_task_terminal(task_id)
             return
         self._generation_done_callbacks.setdefault(task_id, []).append(callback)
 
@@ -775,16 +788,21 @@ class TaskManager:
         record = self._generation_tasks.get(task_id)
         if not record:
             return None
-        if record.status in TERMINAL_GENERATION_STATUSES:
+        if (
+            record.status in TERMINAL_GENERATION_STATUSES
+            and task_id in self._generation_terminal_notified
+        ):
             return record
 
         event = self._generation_done_events.setdefault(task_id, asyncio.Event())
+        if record.status in TERMINAL_GENERATION_STATUSES:
+            self._notify_generation_task_terminal(task_id)
         try:
             if timeout_seconds is None:
                 await event.wait()
             else:
                 await asyncio.wait_for(event.wait(), timeout=max(0.0, timeout_seconds))
-        except TimeoutError:
+        except asyncio.TimeoutError:
             return None
         return self._generation_tasks.get(task_id)
 
@@ -825,25 +843,163 @@ class TaskManager:
                 exc_info=True,
             )
 
+    async def _run_generation_callback_ordered(
+        self,
+        callback: GenerationTaskCallback,
+        record: GenerationTaskRecord,
+        label: str,
+    ) -> None:
+        """Run and await one generation callback with error isolation."""
+        try:
+            result = callback(record)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('Task', record.task_id)} 生图任务{label}异常: {exc}",
+                exc_info=True,
+            )
+
+    def _run_generation_callback_inline(
+        self,
+        callback: GenerationTaskCallback,
+        record: GenerationTaskRecord,
+        label: str,
+    ) -> Any | None:
+        """Run one callback synchronously and return its awaitable part if any."""
+        try:
+            result = callback(record)
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('Task', record.task_id)} 生图任务{label}异常: {exc}",
+                exc_info=True,
+            )
+            return None
+        return result if inspect.isawaitable(result) else None
+
     def _notify_generation_task_terminal(self, task_id: str) -> None:
-        """Notify terminal callbacks, public callbacks, and waiters once."""
-        if task_id in self._generation_terminal_notified:
+        """Schedule terminal callbacks, public callbacks, and waiters once."""
+        if (
+            task_id in self._generation_terminal_notified
+            or task_id in self._generation_terminal_notifying
+        ):
             return
         record = self._generation_tasks.get(task_id)
         if not record or record.status not in TERMINAL_GENERATION_STATUSES:
             return
 
+        self._generation_terminal_notifying.add(task_id)
+        pending_awaitables: list[Any] = []
+        while terminal_callbacks := self._generation_terminal_callbacks.pop(
+            task_id,
+            [],
+        ):
+            for callback in terminal_callbacks:
+                awaitable = self._run_generation_callback_inline(
+                    callback,
+                    record,
+                    "终态业务回调",
+                )
+                if awaitable is not None:
+                    pending_awaitables.append(awaitable)
+
+        if pending_awaitables:
+            task = self.create_task(
+                self._notify_generation_task_terminal_async(
+                    task_id,
+                    pending_awaitables,
+                ),
+                name=f"image_generation_terminal_notify:{task_id}",
+            )
+            self._generation_notification_tasks[task_id] = task
+            task.add_done_callback(
+                functools.partial(self._on_generation_notification_done, task_id)
+            )
+            return
+
+        self._complete_generation_terminal_notification(task_id)
+
+    async def _notify_generation_task_terminal_async(
+        self,
+        task_id: str,
+        pending_awaitables: list[Any],
+    ) -> None:
+        """Await asynchronous terminal callbacks before public notifications."""
+        record = self._generation_tasks.get(task_id)
+        if not record or record.status not in TERMINAL_GENERATION_STATUSES:
+            return
+
+        for awaitable in pending_awaitables:
+            await self._await_generation_callback(
+                task_id,
+                awaitable,
+                "终态业务回调",
+            )
+
+        while terminal_callbacks := self._generation_terminal_callbacks.pop(
+            task_id,
+            [],
+        ):
+            for callback in terminal_callbacks:
+                await self._run_generation_callback_ordered(
+                    callback,
+                    record,
+                    "终态业务回调",
+                )
+
+        self._complete_generation_terminal_notification(task_id)
+
+    def _complete_generation_terminal_notification(self, task_id: str) -> None:
+        """Run public completion callbacks and release waiters."""
+        record = self._generation_tasks.get(task_id)
+        if not record or record.status not in TERMINAL_GENERATION_STATUSES:
+            self._generation_terminal_notifying.discard(task_id)
+            return
+
+        # Terminal callbacks may update quota settlement flags.
+        self._save_generation_tasks()
+
+        while done_callbacks := self._generation_done_callbacks.pop(task_id, []):
+            for callback in done_callbacks:
+                self._dispatch_generation_callback(callback, record, "完成回调")
+
         self._generation_terminal_notified.add(task_id)
-        terminal_callbacks = self._generation_terminal_callbacks.pop(task_id, [])
-        for callback in terminal_callbacks:
-            self._dispatch_generation_callback(callback, record, "终态业务回调")
-
-        done_callbacks = self._generation_done_callbacks.pop(task_id, [])
-        for callback in done_callbacks:
-            self._dispatch_generation_callback(callback, record, "完成回调")
-
+        self._generation_terminal_notifying.discard(task_id)
         if event := self._generation_done_events.get(task_id):
             event.set()
+
+        self._trim_generation_history()
+        self._save_generation_tasks()
+
+    def _on_generation_notification_done(
+        self,
+        task_id: str,
+        task: asyncio.Task,
+    ) -> None:
+        """Cleanup notification task bookkeeping and log unexpected failures."""
+        self.background_tasks.discard(task)
+        self._generation_terminal_notifying.discard(task_id)
+        if self._generation_notification_tasks.get(task_id) is task:
+            self._generation_notification_tasks.pop(task_id, None)
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('Task', task_id)} 生图任务终态通知异常: {exc}",
+                exc_info=True,
+            )
+
+    async def _wait_generation_notifications(self) -> None:
+        """Wait for in-flight terminal notifications before shutdown cleanup."""
+        tasks = [
+            task
+            for task in self._generation_notification_tasks.values()
+            if not task.done()
+        ]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_generation_task(
         self, task_id: str, coro: Coroutine[Any, Any, Any]
@@ -877,7 +1033,7 @@ class TaskManager:
         error: str = "",
     ) -> None:
         """Mark pending or running sub-requests with a final item status."""
-        safe_error = safe_log_text(error, 200) if error else ""
+        safe_error = safe_log_error_body(error, 200) if error else ""
         for item in record.items.values():
             if item.status not in ACTIVE_GENERATION_ITEM_STATUSES:
                 continue
@@ -902,8 +1058,8 @@ class TaskManager:
 
         record.status = status
         record.finished_at = record.finished_at or datetime.now()
-        record.message = message
-        record.error = safe_log_text(error, 300) if error else ""
+        record.message = safe_log_error_body(message, 300)
+        record.error = safe_log_error_body(error, 300) if error else ""
         if result_paths is not None:
             record.result_paths = list(result_paths)
         final_result_count = (
@@ -998,7 +1154,7 @@ class TaskManager:
         )
         item.status = status
         item.result_count = max(0, result_count)
-        item.error = safe_log_text(error, 200) if error else ""
+        item.error = safe_log_error_body(error, 200) if error else ""
 
     def update_generation_task_progress(
         self,
@@ -1191,7 +1347,9 @@ class TaskManager:
             self._generation_terminal_callbacks.pop(task_id, None)
             self._generation_done_callbacks.pop(task_id, None)
             self._generation_done_events.pop(task_id, None)
+            self._generation_terminal_notifying.discard(task_id)
             self._generation_terminal_notified.discard(task_id)
+            self._generation_notification_tasks.pop(task_id, None)
             removed += 1
         if removed:
             self._save_generation_tasks()
@@ -1213,7 +1371,9 @@ class TaskManager:
             self._generation_terminal_callbacks.pop(task_id, None)
             self._generation_done_callbacks.pop(task_id, None)
             self._generation_done_events.pop(task_id, None)
+            self._generation_terminal_notifying.discard(task_id)
             self._generation_terminal_notified.discard(task_id)
+            self._generation_notification_tasks.pop(task_id, None)
             overflow -= 1
             changed = True
         return changed
@@ -1431,6 +1591,8 @@ class TaskManager:
                 "插件卸载/重启导致任务中断",
             )
 
+        await self._wait_generation_notifications()
+
         for task in list(self._running_generation_tasks):
             if not task.done():
                 task.cancel()
@@ -1440,6 +1602,8 @@ class TaskManager:
                 *self._running_generation_tasks,
                 return_exceptions=True,
             )
+
+        await self._wait_generation_notifications()
 
         for _ in list(self._generation_workers):
             self._generation_queue.put_nowait(None)
@@ -1464,6 +1628,8 @@ class TaskManager:
         self._last_run_dates.clear()
         self._generation_workers.clear()
         self._running_generation_tasks.clear()
+        self._generation_terminal_notifying.clear()
+        self._generation_notification_tasks.clear()
         self._generation_worker_target_count = 0
         self._save_generation_tasks()
         logger.debug(f"{LOG} 所有后台任务已取消")

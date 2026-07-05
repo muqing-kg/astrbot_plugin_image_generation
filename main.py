@@ -969,7 +969,9 @@ class ImageGenerationPlugin(Star):
                         task_id=task_id,
                         batch_index=current_index,
                         batch_count=image_count,
-                        retry_status_callback=lambda retry_attempt, max_retry_attempts, current_index=current_index: (
+                        retry_status_callback=lambda retry_attempt,
+                        max_retry_attempts,
+                        current_index=current_index: (
                             self.task_manager.update_generation_task_retry_status(
                                 task_id,
                                 current_index=current_index,
@@ -1265,46 +1267,80 @@ class ImageGenerationPlugin(Star):
             if check_result:
                 yield event.plain_result(check_result)
             return
+        usage_reserved = True
+        task_created = False
 
         task_id = new_task_id()
-        images_data: list[ImageData] | None = None
-        if self.generator.adapter.get_capabilities() & ImageCapability.IMAGE_TO_IMAGE:
-            try:
-                images_data = await collect_command_reference_images(
-                    self.image_processor,
-                    event,
-                    persona_images,
-                    task_id=task_id,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error(
-                    f"{log_prefix('Task', task_id)} 参考图准备失败: {safe_log_text(exc, 200)}",
-                    exc_info=True,
-                )
-                images_data = []
-
-        reference_image_count = len(images_data or [])
-
         try:
-            self.create_generation_task(
-                task_id=task_id,
-                source="指令",
-                prompt=prompt,
-                images_data=images_data,
-                unified_msg_origin=event.unified_msg_origin,
-                aspect_ratio=aspect_ratio,
-                resolution=resolution,
-                image_count=image_count,
-                is_usage_limit_admin=is_usage_limit_admin,
-                preset=preset_or_persona,
-                preset_label=preset_label,
-                presets=matched_presets,
-                personas=matched_personas,
-            )
+            images_data: list[ImageData] | None = None
+            if (
+                self.generator.adapter.get_capabilities()
+                & ImageCapability.IMAGE_TO_IMAGE
+            ):
+                try:
+                    images_data = await collect_command_reference_images(
+                        self.image_processor,
+                        event,
+                        persona_images,
+                        task_id=task_id,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.error(
+                        f"{log_prefix('Task', task_id)} 参考图准备失败: {safe_log_text(exc, 200)}",
+                        exc_info=True,
+                    )
+                    images_data = []
+
+            reference_image_count = len(images_data or [])
+
+            try:
+                self.create_generation_task(
+                    task_id=task_id,
+                    source="指令",
+                    prompt=prompt,
+                    images_data=images_data,
+                    unified_msg_origin=event.unified_msg_origin,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    image_count=image_count,
+                    is_usage_limit_admin=is_usage_limit_admin,
+                    preset=preset_or_persona,
+                    preset_label=preset_label,
+                    presets=matched_presets,
+                    personas=matched_personas,
+                )
+                task_created = True
+            except GenerationTaskCreationError:
+                # create_generation_task() rolls back quota reservation on creation failure.
+                usage_reserved = False
+                raise
+        except asyncio.CancelledError:
+            if usage_reserved and not task_created:
+                self.usage_manager.release_reserved_usage(
+                    user_id,
+                    is_admin=is_usage_limit_admin,
+                    count=image_count,
+                )
+            raise
         except GenerationTaskCreationError as exc:
             yield event.plain_result(f"❌ 生图任务提交失败: {exc.message}")
+            return
+        except Exception as exc:
+            if usage_reserved and not task_created:
+                self.usage_manager.release_reserved_usage(
+                    user_id,
+                    is_admin=is_usage_limit_admin,
+                    count=image_count,
+                )
+            logger.error(
+                f"{log_prefix('Task', task_id)} 生图任务提交前处理失败: {safe_log_error_body(exc, 200)}",
+                exc_info=True,
+            )
+            yield event.plain_result(
+                f"❌ 生图任务提交失败: {safe_log_error_body(exc, 160)}"
+            )
             return
 
         msg = self.format_start_task_message(

@@ -196,7 +196,9 @@ async def wait_generation_result(
 | :--- | :--- |
 | `task_id` | 要等待的任务 ID。 |
 | `timeout_seconds` | 等待超时时间；`None` 表示不主动超时。 |
-| `poll_interval_seconds` | 轮询任务状态的间隔，内部最小值为 `0.05` 秒。 |
+| `poll_interval_seconds` | 兼容旧版本保留；当前优先使用任务完成事件等待。 |
+
+`queued`、`running`、`cancelling` 都是等待过程中的中间状态；本接口会继续等待直到任务进入终态、超时或任务不存在。
 
 ### 返回码
 
@@ -208,7 +210,6 @@ async def wait_generation_result(
 | `not_found` | `False` | 任务不存在。 |
 | `failed` | `False` | 任务失败。 |
 | `cancelled` | `False` | 任务已取消。 |
-| `cancelling` | `False` | 任务处于取消状态后结束时返回。 |
 
 ### 示例
 
@@ -256,7 +257,7 @@ async def generate_image_files(
 | 参数 | 说明 |
 | :--- | :--- |
 | `timeout_seconds` | 等待任务完成的超时时间；提交失败时不会等待。 |
-| `poll_interval_seconds` | 等待任务完成时的轮询间隔。 |
+| `poll_interval_seconds` | 兼容旧版本保留；当前优先使用任务完成事件等待。 |
 
 ## 返回码总览
 
@@ -282,7 +283,6 @@ async def generate_image_files(
 | `succeeded` | `wait_generation_result`、`generate_image_files` | `True` | 任务成功并返回图片路径。 |
 | `no_result` | `wait_generation_result`、`generate_image_files` | `False` | 任务成功结束但没有图片路径。 |
 | `failed` | `wait_generation_result`、`generate_image_files` | `False` | 任务失败。 |
-| `cancelling` | `wait_generation_result`、`generate_image_files` | `False` | 任务处于取消中状态时结束。 |
 | `cancelled` | `wait_generation_result`、`generate_image_files` | `False` | 任务已取消。 |
 
 ### 示例：不计用户额度

@@ -5,6 +5,7 @@
   - 子请求进度改为显式记录 `pending`、`running`、`succeeded`、`failed`、`cancelled`，适配单次请求返回多张图片的统计展示。
   - 新增任务历史持久化，插件重载后可查询最近已结束任务；重启前未完成任务会恢复为已取消且不会继续执行。
   - 公共 API 快照新增 `request_stats`、`items` 和拆分进度字段，同时保留旧字段兼容外部插件。
+  - 公共 API 等待结果改为事件驱动，并修复设置超时时 `asyncio.wait_for()` 超时异常未被正确转换为 `timeout` 返回码的问题。
   - 优化 `/生图任务` 详情、LLM 工具结果 payload 和公共 API 文档，明确 `requested_count` 是子请求数量、`result_count` 是实际保存图片数量。
 
 - **v1.3.4-2026-07-03**
