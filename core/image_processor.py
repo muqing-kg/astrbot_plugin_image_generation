@@ -15,11 +15,12 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
+from PIL import Image, UnidentifiedImageError
+
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_workspaces_path
 from astrbot.core.utils.io import download_image_by_url
-from PIL import Image, UnidentifiedImageError
 
 from .logging_utils import log_prefix, mask_sensitive, safe_log_url
 from .types import ImageData

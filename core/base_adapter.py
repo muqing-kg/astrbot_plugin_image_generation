@@ -15,7 +15,6 @@ from .constants import DEFAULT_DOWNLOAD_TIMEOUT
 from .logging_utils import log_prefix, mask_sensitive, safe_log_text
 from .types import AdapterConfig, GenerationRequest, GenerationResult, ImageCapability
 
-
 API_STATUS_ERROR_PATTERN = re.compile(r"API 错误\s*\((\d{3})\)")
 DEBUG_JSON_STRING_LIMIT = 1000
 DEBUG_JSON_EDGE_CHARS = 120

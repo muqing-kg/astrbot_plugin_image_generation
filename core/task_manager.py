@@ -7,13 +7,18 @@ import json
 import os
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
 
+from .constants import (
+    DEFAULT_ENABLE_GENERATION_TASK_HISTORY,
+    DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
+    DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
+)
 from .logging_utils import (
     format_optional,
     format_seconds,
@@ -23,9 +28,8 @@ from .logging_utils import (
     safe_log_text,
 )
 
-
 LOG = log_prefix("TaskManager")
-DEFAULT_GENERATION_TASK_HISTORY_LIMIT = 100
+GENERATION_TERMINAL_CALLBACK_TIMEOUT_SECONDS = 10.0
 
 
 class GenerationTaskStatus(str, Enum):
@@ -36,6 +40,16 @@ class GenerationTaskStatus(str, Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+
+
+class GenerationTaskItemStatus(str, Enum):
+    """Lifecycle states for one generation sub-request."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
     CANCELLED = "cancelled"
 
 
@@ -60,7 +74,10 @@ TERMINAL_GENERATION_STATUSES = {
     GenerationTaskStatus.CANCELLED,
 }
 
-ACTIVE_GENERATION_ITEM_STATUSES = {"pending", "running"}
+ACTIVE_GENERATION_ITEM_STATUSES = {
+    GenerationTaskItemStatus.PENDING,
+    GenerationTaskItemStatus.RUNNING,
+}
 
 GENERATION_TASK_STATUS_LABELS = {
     GenerationTaskStatus.QUEUED: "排队中",
@@ -77,7 +94,7 @@ class GenerationTaskItem:
     """Per-request generation result metadata."""
 
     index: int
-    status: str = "pending"
+    status: GenerationTaskItemStatus = GenerationTaskItemStatus.PENDING
     result_count: int = 0
     error: str = ""
     retry_attempts: int = 0
@@ -153,11 +170,11 @@ class GenerationTaskRecord:
     def request_stats(self) -> dict[str, int]:
         """Return normalized sub-request progress statistics."""
         statuses = [item.status for item in self.items.values()]
-        succeeded = statuses.count("succeeded")
-        failed = statuses.count("failed")
-        cancelled = statuses.count("cancelled")
-        running = statuses.count("running")
-        pending = statuses.count("pending")
+        succeeded = statuses.count(GenerationTaskItemStatus.SUCCEEDED)
+        failed = statuses.count(GenerationTaskItemStatus.FAILED)
+        cancelled = statuses.count(GenerationTaskItemStatus.CANCELLED)
+        running = statuses.count(GenerationTaskItemStatus.RUNNING)
+        pending = statuses.count(GenerationTaskItemStatus.PENDING)
         finished = succeeded + failed + cancelled
         total = max(self.requested_count, len(statuses))
         return {
@@ -209,6 +226,8 @@ class TaskManager:
     def __init__(
         self,
         generation_history_limit: int = DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
+        generation_history_retention_days: int = DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
+        enable_generation_task_history: bool = DEFAULT_ENABLE_GENERATION_TASK_HISTORY,
         max_queued_generation_tasks: int = 20,
         persistence_file: str | Path | None = None,
     ):
@@ -230,6 +249,11 @@ class TaskManager:
         self._generation_terminal_notified: set[str] = set()
         self._generation_notification_tasks: dict[str, asyncio.Task] = {}
         self._generation_history_limit = max(1, generation_history_limit)
+        self._generation_history_retention_days = max(
+            0,
+            generation_history_retention_days,
+        )
+        self._enable_generation_task_history = bool(enable_generation_task_history)
         self._generation_queue: asyncio.Queue[GenerationQueueItem | None] = (
             asyncio.Queue()
         )
@@ -252,8 +276,40 @@ class TaskManager:
         if name:
             task.set_name(name)
         self.background_tasks.add(task)
-        task.add_done_callback(self.background_tasks.discard)
+        task.add_done_callback(self._on_background_task_done)
         return task
+
+    def _on_background_task_done(self, task: asyncio.Task) -> None:
+        """Remove a background task and log unhandled exceptions."""
+        self.background_tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exc:
+            logger.error(
+                f"{LOG} 后台任务异常退出: {_task_name(task.get_name())}: {exc}",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+
+    def get_generation_queue_rejection(self) -> tuple[str, str] | None:
+        """Return the current reason for rejecting a new generation task.
+
+        Returns:
+            ``None`` if a new generation task can be accepted, otherwise a
+            stable error code and user-facing message.
+        """
+        if not self._accepting_generation_tasks or self._generation_shutdown:
+            return "task_manager_closed", "生图任务队列暂不可用，请稍后再试"
+        if self._queued_generation_task_count() >= self._max_queued_generation_tasks:
+            return "queue_full", "生图任务队列已满，请稍后再试"
+        return None
+
+    def can_accept_generation_task(self) -> bool:
+        """Return whether a new generation task can currently be accepted."""
+        return self.get_generation_queue_rejection() is None
 
     def create_generation_task(
         self,
@@ -275,21 +331,13 @@ class TaskManager:
         terminal_callback: GenerationTaskCallback | None = None,
     ) -> GenerationTaskRecord:
         """Create and enqueue an image generation task."""
-        if not self._accepting_generation_tasks or self._generation_shutdown:
-            raise GenerationTaskCreationError(
-                "task_manager_closed",
-                "生图任务队列暂不可用，请稍后再试",
-            )
+        if rejection := self.get_generation_queue_rejection():
+            code, message = rejection
+            raise GenerationTaskCreationError(code, message)
         if task_id in self._generation_tasks:
             raise GenerationTaskCreationError(
                 "task_id_conflict",
                 f"生图任务 ID 冲突: {task_id}",
-            )
-
-        if self._queued_generation_task_count() >= self._max_queued_generation_tasks:
-            raise GenerationTaskCreationError(
-                "queue_full",
-                "生图任务队列已满，请稍后再试",
             )
 
         safe_requested_count = max(1, requested_count)
@@ -334,6 +382,9 @@ class TaskManager:
 
     def load_generation_history(self) -> None:
         """Load persisted generation task history from disk."""
+        if not self._enable_generation_task_history:
+            logger.debug(f"{LOG} 生图任务历史持久化已关闭，跳过加载")
+            return
         if not self._generation_persistence_file:
             return
         persistence_file = self._generation_persistence_file
@@ -382,7 +433,7 @@ class TaskManager:
                 record.finished_at = record.finished_at or now
                 self._mark_unfinished_generation_items(
                     record,
-                    status="cancelled",
+                    status=GenerationTaskItemStatus.CANCELLED,
                     error=record.error,
                 )
                 history_changed = True
@@ -408,6 +459,30 @@ class TaskManager:
         """Persist the current generation task history immediately."""
         self._save_generation_tasks()
 
+    def configure_generation_history(
+        self,
+        *,
+        generation_history_limit: int,
+        generation_history_retention_days: int,
+        enable_generation_task_history: bool,
+    ) -> None:
+        """Update generation task history persistence and retention settings.
+
+        Args:
+            generation_history_limit: Maximum retained generation task records.
+            generation_history_retention_days: Maximum age for finished records;
+                ``0`` disables age-based trimming.
+            enable_generation_task_history: Whether task history is persisted.
+        """
+        self._generation_history_limit = max(1, generation_history_limit)
+        self._generation_history_retention_days = max(
+            0,
+            generation_history_retention_days,
+        )
+        self._enable_generation_task_history = bool(enable_generation_task_history)
+        self._trim_generation_history()
+        self._save_generation_tasks()
+
     def configure_generation_queue(self, *, max_queued_generation_tasks: int) -> None:
         """Update generation queue capacity for newly submitted tasks.
 
@@ -426,6 +501,8 @@ class TaskManager:
 
     def _save_generation_tasks(self) -> None:
         """Persist serializable generation task metadata to disk."""
+        if not self._enable_generation_task_history:
+            return
         if not self._generation_persistence_file:
             return
         payload = {
@@ -492,7 +569,7 @@ class TaskManager:
         """Convert one generation sub-request item to JSON-safe metadata."""
         return {
             "index": item.index,
-            "status": item.status,
+            "status": item.status.value,
             "result_count": item.result_count,
             "error": item.error,
             "retry_attempts": item.retry_attempts,
@@ -580,7 +657,7 @@ class TaskManager:
                 continue
             items[index] = GenerationTaskItem(
                 index=index,
-                status=str(raw_item.get("status") or "pending"),
+                status=self._safe_generation_item_status(raw_item.get("status")),
                 result_count=self._safe_int(raw_item.get("result_count"), 0, 0),
                 error=safe_log_error_body(raw_item.get("error") or "", 200),
                 retry_attempts=self._safe_int(raw_item.get("retry_attempts"), 0, 0),
@@ -594,6 +671,21 @@ class TaskManager:
         for index in range(1, max(1, requested_count) + 1):
             items.setdefault(index, GenerationTaskItem(index=index))
         return items
+
+    def _safe_generation_item_status(self, value: Any) -> GenerationTaskItemStatus:
+        """Coerce raw persisted item status to a known enum value.
+
+        Args:
+            value: Raw persisted item status value.
+
+        Returns:
+            A valid generation item status. Unknown values fall back to
+            ``pending`` so unfinished legacy records remain visible.
+        """
+        try:
+            return GenerationTaskItemStatus(str(value or "pending"))
+        except ValueError:
+            return GenerationTaskItemStatus.PENDING
 
     def _datetime_to_str(self, value: datetime | None) -> str | None:
         """Serialize a datetime to ISO text."""
@@ -653,7 +745,7 @@ class TaskManager:
                 name=f"image_generation_worker:{worker_index}",
             )
             self._generation_workers.add(task)
-            task.add_done_callback(self._generation_workers.discard)
+            task.add_done_callback(self._on_generation_worker_done)
 
         extra_count = len(self._generation_workers) - target_count
         for _ in range(max(0, extra_count)):
@@ -679,8 +771,29 @@ class TaskManager:
                     self._generation_queue.task_done()
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            logger.error(
+                f"{LOG} 生图任务 worker {worker_index} 异常退出: {exc}",
+                exc_info=True,
+            )
+            raise
         finally:
             logger.debug(f"{LOG} 生图任务 worker {worker_index} 已退出")
+
+    def _on_generation_worker_done(self, task: asyncio.Task) -> None:
+        """Cleanup a generation worker and log unexpected failures."""
+        self._generation_workers.discard(task)
+        if task.cancelled():
+            return
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exc:
+            logger.error(
+                f"{LOG} 生图任务 worker 异常结束: {_task_name(task.get_name())}: {exc}",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
 
     async def _run_generation_queue_item(
         self,
@@ -689,13 +802,22 @@ class TaskManager:
         """Execute one queued generation task if it is still active."""
         record = self._generation_tasks.get(queue_item.task_id)
         if not record:
+            logger.debug(
+                f"{log_prefix('Task', queue_item.task_id)} 队列项对应任务不存在，已跳过"
+            )
             return
         if record.status == GenerationTaskStatus.CANCELLED:
+            logger.debug(
+                f"{log_prefix('Task', queue_item.task_id)} 已取消的排队任务由 worker 惰性跳过"
+            )
             return
         if record.status == GenerationTaskStatus.CANCELLING:
             self.mark_generation_task_cancelled(queue_item.task_id)
             return
         if record.status in TERMINAL_GENERATION_STATUSES:
+            logger.debug(
+                f"{log_prefix('Task', queue_item.task_id)} 已结束的排队任务由 worker 惰性跳过: {record.status_label}"
+            )
             return
 
         self.mark_generation_task_running(queue_item.task_id)
@@ -833,10 +955,20 @@ class TaskManager:
         task_id: str,
         awaitable: Any,
         label: str,
+        *,
+        timeout_seconds: float | None = None,
     ) -> None:
         """Await an asynchronous generation callback with error isolation."""
         try:
-            await awaitable
+            if timeout_seconds is None:
+                await awaitable
+            else:
+                await asyncio.wait_for(awaitable, timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"{log_prefix('Task', task_id)} 生图任务{label}超时: "
+                f"超过 {format_seconds(timeout_seconds)}"
+            )
         except Exception as exc:
             logger.error(
                 f"{log_prefix('Task', task_id)} 生图任务{label}异步异常: {exc}",
@@ -848,12 +980,19 @@ class TaskManager:
         callback: GenerationTaskCallback,
         record: GenerationTaskRecord,
         label: str,
+        *,
+        timeout_seconds: float | None = None,
     ) -> None:
         """Run and await one generation callback with error isolation."""
         try:
             result = callback(record)
             if inspect.isawaitable(result):
-                await result
+                await self._await_generation_callback(
+                    record.task_id,
+                    result,
+                    label,
+                    timeout_seconds=timeout_seconds,
+                )
         except Exception as exc:
             logger.error(
                 f"{log_prefix('Task', record.task_id)} 生图任务{label}异常: {exc}",
@@ -934,6 +1073,7 @@ class TaskManager:
                 task_id,
                 awaitable,
                 "终态业务回调",
+                timeout_seconds=GENERATION_TERMINAL_CALLBACK_TIMEOUT_SECONDS,
             )
 
         while terminal_callbacks := self._generation_terminal_callbacks.pop(
@@ -945,6 +1085,7 @@ class TaskManager:
                     callback,
                     record,
                     "终态业务回调",
+                    timeout_seconds=GENERATION_TERMINAL_CALLBACK_TIMEOUT_SECONDS,
                 )
 
         self._complete_generation_terminal_notification(task_id)
@@ -1029,7 +1170,7 @@ class TaskManager:
         self,
         record: GenerationTaskRecord,
         *,
-        status: str,
+        status: GenerationTaskItemStatus,
         error: str = "",
     ) -> None:
         """Mark pending or running sub-requests with a final item status."""
@@ -1070,13 +1211,13 @@ class TaskManager:
         if status == GenerationTaskStatus.CANCELLED:
             self._mark_unfinished_generation_items(
                 record,
-                status="cancelled",
+                status=GenerationTaskItemStatus.CANCELLED,
                 error=message,
             )
         elif status == GenerationTaskStatus.FAILED:
             self._mark_unfinished_generation_items(
                 record,
-                status="failed",
+                status=GenerationTaskItemStatus.FAILED,
                 error=record.error or message,
             )
         return record
@@ -1126,9 +1267,12 @@ class TaskManager:
         record.max_retry_attempts = max(0, max_retry_attempts)
         item = record.items.setdefault(
             record.current_index,
-            GenerationTaskItem(index=record.current_index, status="running"),
+            GenerationTaskItem(
+                index=record.current_index,
+                status=GenerationTaskItemStatus.RUNNING,
+            ),
         )
-        item.status = "running"
+        item.status = GenerationTaskItemStatus.RUNNING
         item.retry_attempts = max(item.retry_attempts, record.retry_attempt)
         item.max_retry_attempts = max(
             item.max_retry_attempts, record.max_retry_attempts
@@ -1152,7 +1296,7 @@ class TaskManager:
             safe_index,
             GenerationTaskItem(index=safe_index),
         )
-        item.status = status
+        item.status = self._safe_generation_item_status(status)
         item.result_count = max(0, result_count)
         item.error = safe_log_error_body(error, 200) if error else ""
 
@@ -1280,7 +1424,7 @@ class TaskManager:
             return
         self._mark_unfinished_generation_items(
             record,
-            status="cancelled",
+            status=GenerationTaskItemStatus.CANCELLED,
             error=reason,
         )
 
@@ -1357,26 +1501,46 @@ class TaskManager:
 
     def _trim_generation_history(self) -> bool:
         """Keep finished task history bounded while preserving active tasks."""
+        changed = False
+        if self._generation_history_retention_days > 0:
+            cutoff = datetime.now() - timedelta(
+                days=self._generation_history_retention_days
+            )
+            for task_id, record in list(self._generation_tasks.items()):
+                if record.is_active:
+                    continue
+                finished_at = (
+                    record.finished_at or record.started_at or record.created_at
+                )
+                if finished_at >= cutoff:
+                    continue
+                del self._generation_tasks[task_id]
+                self._discard_generation_task_bookkeeping(task_id)
+                changed = True
+
         overflow = len(self._generation_tasks) - self._generation_history_limit
         if overflow <= 0:
-            return False
+            return changed
 
-        changed = False
         for task_id, record in list(self._generation_tasks.items()):
             if overflow <= 0:
                 break
             if record.is_active:
                 continue
             del self._generation_tasks[task_id]
-            self._generation_terminal_callbacks.pop(task_id, None)
-            self._generation_done_callbacks.pop(task_id, None)
-            self._generation_done_events.pop(task_id, None)
-            self._generation_terminal_notifying.discard(task_id)
-            self._generation_terminal_notified.discard(task_id)
-            self._generation_notification_tasks.pop(task_id, None)
+            self._discard_generation_task_bookkeeping(task_id)
             overflow -= 1
             changed = True
         return changed
+
+    def _discard_generation_task_bookkeeping(self, task_id: str) -> None:
+        """Discard callbacks, waiters, and notification records for one task."""
+        self._generation_terminal_callbacks.pop(task_id, None)
+        self._generation_done_callbacks.pop(task_id, None)
+        self._generation_done_events.pop(task_id, None)
+        self._generation_terminal_notifying.discard(task_id)
+        self._generation_terminal_notified.discard(task_id)
+        self._generation_notification_tasks.pop(task_id, None)
 
     def start_loop_task(
         self,

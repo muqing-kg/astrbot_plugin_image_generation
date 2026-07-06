@@ -10,7 +10,6 @@ from astrbot.api import logger
 
 from .logging_utils import log_prefix
 
-
 LOG = log_prefix("Config")
 SCHEMA_DEFAULT_FACTORIES: dict[str, Any] = {
     "int": int,
@@ -36,6 +35,8 @@ MIN_NUMBER_VALUES: dict[str, int | float] = {
     "generation.max_concurrent_tasks": 1,
     "generation.max_running_generation_tasks": 1,
     "generation.max_queued_generation_tasks": 1,
+    "generation.generation_task_history_limit": 1,
+    "generation.generation_task_history_retention_days": 0,
     "generation.default_image_count": 1,
     "generation.max_image_count": 1,
     "generation.max_images_per_message": 1,

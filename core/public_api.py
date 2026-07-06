@@ -21,9 +21,8 @@ from .reference_collector import (
     deduplicate_reference_images,
     download_reference_images,
 )
-from .task_manager import GenerationTaskRecord
-from .task_manager import GenerationTaskCreationError
 from .task_id import new_task_id
+from .task_manager import GenerationTaskCreationError, GenerationTaskRecord
 from .template_utils import (
     find_named_entry,
     format_template_summary,
@@ -31,7 +30,6 @@ from .template_utils import (
     parse_preset_prompt,
 )
 from .types import ImageCapability, ImageData
-
 
 LOG = log_prefix("PublicAPI")
 DEFAULT_SOURCE = "公共接口"
@@ -63,7 +61,7 @@ class PublicAPIResultCode(str, Enum):
     CANCELLED = "cancelled"
 
     @classmethod
-    def from_task_status(cls, status: str) -> "PublicAPIResultCode":
+    def from_task_status(cls, status: str) -> PublicAPIResultCode:
         """Map task status values to public API result codes."""
         try:
             return cls(status)
@@ -235,6 +233,14 @@ class ImageGenerationPublicAPI:
                 PublicAPIResultCode.PROMPT_BLOCKED,
                 f"提示词审核未通过: {prompt_reason}",
                 error=prompt_reason,
+            )
+
+        if rejection := plugin.task_manager.get_generation_queue_rejection():
+            code, message = rejection
+            return self._submit_error(
+                self._task_creation_error_code(code),
+                message,
+                error=code,
             )
 
         if use_usage_scope:
@@ -539,7 +545,7 @@ class ImageGenerationPublicAPI:
             items=[
                 {
                     "index": item.index,
-                    "status": item.status,
+                    "status": item.status.value,
                     "result_count": item.result_count,
                     "error": safe_log_text(item.error, 160) if item.error else "",
                     "retry_attempts": item.retry_attempts,

@@ -33,7 +33,6 @@ from .template_utils import (
 )
 from .types import ImageCapability
 
-
 ASPECT_RATIO_OPTIONS = list(SUPPORTED_ASPECT_RATIOS)
 RESOLUTION_OPTIONS = list(SUPPORTED_RESOLUTIONS)
 LOG = log_prefix("LLMTool")
@@ -303,6 +302,10 @@ async def _start_generation_task(
     )
     if not prompt_allowed:
         return f"❌ 提示词审核未通过: {prompt_reason}"
+
+    if rejection := plugin.task_manager.get_generation_queue_rejection():
+        code, message = rejection
+        return f"❌ 生图任务提交失败: {message} ({code})"
 
     check_result = plugin.usage_manager.check_rate_limit(
         event.unified_msg_origin,

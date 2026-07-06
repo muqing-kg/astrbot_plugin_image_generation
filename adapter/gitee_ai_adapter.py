@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 import aiohttp
+
 from astrbot.api import logger
 
 from ..core.base_adapter import BaseImageAdapter

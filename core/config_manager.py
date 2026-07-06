@@ -10,27 +10,31 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
 
+from .config_validator import ConfigValidator
 from .constants import (
     ALL_LLM_TOOLS,
     ALL_RESULT_INFO_ITEMS,
     DEFAULT_ASPECT_RATIO,
     DEFAULT_AUDIT_MAX_RETRY_ATTEMPTS,
     DEFAULT_DAILY_LIMIT_COUNT,
+    DEFAULT_ENABLE_GENERATION_TASK_HISTORY,
     DEFAULT_GENERATION_IMAGE_COUNT,
+    DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
+    DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
     DEFAULT_IMAGE_AUDIT_PROMPT,
-    DEFAULT_MAX_GENERATION_IMAGE_COUNT,
-    DEFAULT_MAX_IMAGES_PER_MESSAGE,
     DEFAULT_MAX_CONCURRENT_TASKS,
+    DEFAULT_MAX_GENERATION_IMAGE_COUNT,
     DEFAULT_MAX_IMAGE_SIZE_MB,
+    DEFAULT_MAX_IMAGES_PER_MESSAGE,
     DEFAULT_MAX_QUEUED_GENERATION_TASKS,
     DEFAULT_MAX_RETRY_ATTEMPTS,
     DEFAULT_MAX_RUNNING_GENERATION_TASKS,
     DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS,
     DEFAULT_NON_RETRYABLE_STATUS_CODES,
     DEFAULT_PROMPT_AUDIT_PROMPT,
-    DEFAULT_RESULT_INFO_ITEMS,
     DEFAULT_RATE_LIMIT_SECONDS,
     DEFAULT_RESOLUTION,
+    DEFAULT_RESULT_INFO_ITEMS,
     DEFAULT_TIMEOUT,
     LLM_TOOL_IMAGE_GENERATION,
     LLM_TOOL_PRESET_EDIT,
@@ -42,10 +46,8 @@ from .constants import (
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
-from .config_validator import ConfigValidator
 from .logging_utils import log_prefix, safe_log_text
 from .types import AdapterConfig, AdapterType
-
 
 __all__ = (
     "ConfigManager",
@@ -119,6 +121,11 @@ class GenerationSettings:
     max_concurrent_tasks: int = DEFAULT_MAX_CONCURRENT_TASKS
     max_running_generation_tasks: int = DEFAULT_MAX_RUNNING_GENERATION_TASKS
     max_queued_generation_tasks: int = DEFAULT_MAX_QUEUED_GENERATION_TASKS
+    enable_generation_task_history: bool = DEFAULT_ENABLE_GENERATION_TASK_HISTORY
+    generation_task_history_limit: int = DEFAULT_GENERATION_TASK_HISTORY_LIMIT
+    generation_task_history_retention_days: int = (
+        DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS
+    )
     debug_request_logging: bool = False
     non_retryable_status_codes: list[int] = field(
         default_factory=lambda: list(DEFAULT_NON_RETRYABLE_STATUS_CODES)
@@ -308,6 +315,23 @@ class ConfigManager:
                 "max_queued_generation_tasks",
                 DEFAULT_MAX_QUEUED_GENERATION_TASKS,
                 min_value=1,
+            ),
+            enable_generation_task_history=self._get_bool(
+                cfg,
+                "enable_generation_task_history",
+                DEFAULT_ENABLE_GENERATION_TASK_HISTORY,
+            ),
+            generation_task_history_limit=self._get_int(
+                cfg,
+                "generation_task_history_limit",
+                DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
+                min_value=1,
+            ),
+            generation_task_history_retention_days=self._get_int(
+                cfg,
+                "generation_task_history_retention_days",
+                DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
+                min_value=0,
             ),
             debug_request_logging=self._get_bool(
                 cfg,
@@ -884,6 +908,21 @@ class ConfigManager:
     def max_queued_generation_tasks(self) -> int:
         """最大排队完整生图任务数。"""
         return self._plugin_config.generation_settings.max_queued_generation_tasks
+
+    @property
+    def enable_generation_task_history(self) -> bool:
+        """是否持久化生图任务历史。"""
+        return self._plugin_config.generation_settings.enable_generation_task_history
+
+    @property
+    def generation_task_history_limit(self) -> int:
+        """生图任务历史保留条数。"""
+        return self._plugin_config.generation_settings.generation_task_history_limit
+
+    @property
+    def generation_task_history_retention_days(self) -> int:
+        """生图任务历史保留天数。"""
+        return self._plugin_config.generation_settings.generation_task_history_retention_days
 
     @property
     def result_info_items(self) -> set[str]:

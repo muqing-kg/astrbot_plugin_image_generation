@@ -25,6 +25,7 @@ from .core.config_manager import (
     LLM_TOOL_TASK_MANAGEMENT,
     ConfigManager,
 )
+from .core.constants import UNSPECIFIED_OPTION
 from .core.generator import ImageGenerator
 from .core.image_processor import ImageProcessor
 from .core.llm_result_handler import LLMResultHandler
@@ -35,23 +36,30 @@ from .core.llm_tool import (
     PresetQueryTool,
     adjust_tool_parameters,
 )
-from .core.public_api import ImageGenerationPublicAPI
-from .core.reference_collector import (
-    collect_command_reference_images,
-    ensure_image_data,
-)
-from .core.constants import UNSPECIFIED_OPTION
 from .core.logging_utils import (
     log_prefix,
     mask_sensitive,
     safe_log_error_body,
     safe_log_text,
 )
+from .core.public_api import ImageGenerationPublicAPI
+from .core.reference_collector import (
+    collect_command_reference_images,
+    ensure_image_data,
+)
 from .core.result_formatter import (
     build_result_info_message,
+)
+from .core.result_formatter import (
     format_image_command_help as render_image_command_help,
+)
+from .core.result_formatter import (
     format_start_task_message as render_start_task_message,
+)
+from .core.result_formatter import (
     format_task_detail as render_task_detail,
+)
+from .core.result_formatter import (
     format_task_list as render_task_list,
 )
 from .core.safety_auditor import SafetyAuditor
@@ -70,7 +78,6 @@ from .core.template_utils import (
 from .core.types import GenerationRequest, ImageCapability, ImageData
 from .core.usage_manager import UsageManager
 from .core.utils import validate_aspect_ratio, validate_resolution
-
 
 LOG = log_prefix("Plugin")
 
@@ -106,6 +113,9 @@ class ImageGenerationPlugin(Star):
 
         # 初始化任务管理器
         self.task_manager = TaskManager(
+            generation_history_limit=self.config_manager.generation_task_history_limit,
+            generation_history_retention_days=self.config_manager.generation_task_history_retention_days,
+            enable_generation_task_history=self.config_manager.enable_generation_task_history,
             max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks,
             persistence_file=self.data_dir / "generation_tasks.json",
         )
@@ -296,6 +306,11 @@ class ImageGenerationPlugin(Star):
         )
         self.task_manager.configure_generation_queue(
             max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
+        self.task_manager.configure_generation_history(
+            generation_history_limit=self.config_manager.generation_task_history_limit,
+            generation_history_retention_days=self.config_manager.generation_task_history_retention_days,
+            enable_generation_task_history=self.config_manager.enable_generation_task_history,
         )
         self.task_manager.update_generation_worker_count(
             self.config_manager.max_running_generation_tasks
@@ -765,7 +780,6 @@ class ImageGenerationPlugin(Star):
         """执行生成逻辑并发送结果。"""
         start_time = time.time()
         task_log = log_prefix("Task", task_id)
-        self.task_manager.mark_generation_task_running(task_id)
         if not self.generator:
             logger.warning(f"{task_log} 生成器未初始化，跳过生成请求")
             self.task_manager.mark_generation_task_failed(task_id, "生图生成器未初始化")
@@ -969,9 +983,7 @@ class ImageGenerationPlugin(Star):
                         task_id=task_id,
                         batch_index=current_index,
                         batch_count=image_count,
-                        retry_status_callback=lambda retry_attempt,
-                        max_retry_attempts,
-                        current_index=current_index: (
+                        retry_status_callback=lambda retry_attempt, max_retry_attempts, current_index=current_index: (
                             self.task_manager.update_generation_task_retry_status(
                                 task_id,
                                 current_index=current_index,
@@ -1256,6 +1268,11 @@ class ImageGenerationPlugin(Star):
                 f"{LOG} 提示词审核未通过: 用户={masked_uid}, 原因={safe_log_text(prompt_reason, 160)}"
             )
             yield event.plain_result(f"❌ 提示词审核未通过: {prompt_reason}")
+            return
+
+        if rejection := self.task_manager.get_generation_queue_rejection():
+            _code, message = rejection
+            yield event.plain_result(f"❌ 生图任务提交失败: {message}")
             return
 
         check_result = self.usage_manager.check_rate_limit(

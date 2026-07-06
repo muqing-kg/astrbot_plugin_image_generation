@@ -9,11 +9,12 @@ from ..adapter import (
     GiteeAIAdapter,
     GrokAdapter,
     Jimeng2APIAdapter,
-    OpenAIChatAdapter,
     OpenAIAdapter,
+    OpenAIChatAdapter,
     SiliconFlowAdapter,
     VolcengineArkAdapter,
 )
+from .logging_utils import format_cn_log_fields, log_prefix, safe_log_text
 from .types import (
     AdapterConfig,
     AdapterType,
@@ -21,7 +22,6 @@ from .types import (
     GenerationResult,
     ImageData,
 )
-from .logging_utils import format_cn_log_fields, log_prefix, safe_log_text
 from .utils import convert_images_batch
 
 
