@@ -29,6 +29,15 @@ from .constants import (
     SUPPORTED_ASPECT_RATIOS,
     SUPPORTED_RESOLUTIONS,
 )
+from .generation_executor import GenerationExecutor
+from .generation_task_models import (
+    GenerationTaskCreationError,
+    GenerationTaskItem,
+    GenerationTaskItemStatus,
+    GenerationTaskRecord,
+    GenerationTaskStatus,
+)
+from .generation_task_store import GenerationTaskStore
 from .generator import ImageGenerator
 from .image_processor import ImageProcessor
 from .llm_tool import (
@@ -70,6 +79,7 @@ __all__ = [
     # 基类和核心组件
     "BaseImageAdapter",
     "ImageGenerator",
+    "GenerationExecutor",
     "TaskManager",
     # 新增管理器
     "ConfigManager",
@@ -95,6 +105,12 @@ __all__ = [
     "AdapterType",
     "GenerationRequest",
     "GenerationResult",
+    "GenerationTaskCreationError",
+    "GenerationTaskItem",
+    "GenerationTaskItemStatus",
+    "GenerationTaskRecord",
+    "GenerationTaskStatus",
+    "GenerationTaskStore",
     "ImageCapability",
     "ImageData",
     # 工具函数

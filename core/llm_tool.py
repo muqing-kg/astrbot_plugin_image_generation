@@ -17,6 +17,7 @@ from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
 from .constants import SUPPORTED_ASPECT_RATIOS, SUPPORTED_RESOLUTIONS
+from .generation_task_models import GenerationTaskCreationError
 from .logging_utils import (
     log_prefix,
     mask_sensitive,
@@ -25,7 +26,6 @@ from .logging_utils import (
 )
 from .reference_collector import collect_tool_reference_images, normalize_string_items
 from .task_id import new_task_id
-from .task_manager import GenerationTaskCreationError
 from .template_utils import (
     format_template_summary,
     normalize_name_items,

@@ -3,12 +3,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
-import json
-import os
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +15,19 @@ from .constants import (
     DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
     DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
 )
+from .generation_task_models import (
+    ACTIVE_GENERATION_ITEM_STATUSES,
+    ACTIVE_GENERATION_STATUSES,
+    TERMINAL_GENERATION_STATUSES,
+    GenerationQueueItem,
+    GenerationTaskCreationError,
+    GenerationTaskItem,
+    GenerationTaskItemStatus,
+    GenerationTaskRecord,
+    GenerationTaskStatus,
+    coerce_generation_item_status,
+)
+from .generation_task_store import GenerationTaskStore
 from .logging_utils import (
     format_optional,
     format_seconds,
@@ -30,163 +39,6 @@ from .logging_utils import (
 
 LOG = log_prefix("TaskManager")
 GENERATION_TERMINAL_CALLBACK_TIMEOUT_SECONDS = 10.0
-
-
-class GenerationTaskStatus(str, Enum):
-    """Lifecycle states for image generation tasks."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLING = "cancelling"
-    CANCELLED = "cancelled"
-
-
-class GenerationTaskItemStatus(str, Enum):
-    """Lifecycle states for one generation sub-request."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class GenerationTaskCreationError(Exception):
-    """Error raised when a generation task cannot be accepted."""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-
-ACTIVE_GENERATION_STATUSES = {
-    GenerationTaskStatus.QUEUED,
-    GenerationTaskStatus.RUNNING,
-    GenerationTaskStatus.CANCELLING,
-}
-
-TERMINAL_GENERATION_STATUSES = {
-    GenerationTaskStatus.SUCCEEDED,
-    GenerationTaskStatus.FAILED,
-    GenerationTaskStatus.CANCELLED,
-}
-
-ACTIVE_GENERATION_ITEM_STATUSES = {
-    GenerationTaskItemStatus.PENDING,
-    GenerationTaskItemStatus.RUNNING,
-}
-
-GENERATION_TASK_STATUS_LABELS = {
-    GenerationTaskStatus.QUEUED: "排队中",
-    GenerationTaskStatus.RUNNING: "运行中",
-    GenerationTaskStatus.SUCCEEDED: "已完成",
-    GenerationTaskStatus.FAILED: "失败",
-    GenerationTaskStatus.CANCELLING: "取消中",
-    GenerationTaskStatus.CANCELLED: "已取消",
-}
-
-
-@dataclass
-class GenerationTaskItem:
-    """Per-request generation result metadata."""
-
-    index: int
-    status: GenerationTaskItemStatus = GenerationTaskItemStatus.PENDING
-    result_count: int = 0
-    error: str = ""
-    retry_attempts: int = 0
-    max_retry_attempts: int = 0
-
-
-@dataclass(frozen=True)
-class GenerationQueueItem:
-    """Queued generation task entry."""
-
-    task_id: str
-    coro_factory: Callable[[], Coroutine[Any, Any, Any]]
-
-
-@dataclass
-class GenerationTaskRecord:
-    """In-memory metadata for one image generation task."""
-
-    task_id: str
-    source: str
-    unified_msg_origin: str
-    prompt_summary: str
-    reference_image_count: int
-    requested_count: int
-    aspect_ratio: str
-    resolution: str
-    preset: str | None = None
-    preset_label: str = "预设"
-    status: GenerationTaskStatus = GenerationTaskStatus.QUEUED
-    created_at: datetime = field(default_factory=datetime.now)
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    message: str = "任务已提交"
-    error: str = ""
-    result_count: int = 0
-    result_paths: list[str] = field(default_factory=list)
-    current_index: int = 0
-    retry_attempt: int = 0
-    max_retry_attempts: int = 0
-    items: dict[int, GenerationTaskItem] = field(default_factory=dict)
-    usage_scope: str = ""
-    reserved_count: int = 0
-    is_usage_limit_admin: bool = False
-    quota_released: bool = False
-    quota_settled: bool = False
-    task: asyncio.Task | None = field(default=None, repr=False, compare=False)
-
-    @property
-    def is_active(self) -> bool:
-        """Return whether the task can still change state."""
-        return self.status in ACTIVE_GENERATION_STATUSES
-
-    @property
-    def status_label(self) -> str:
-        """Return a user-facing status label."""
-        return GENERATION_TASK_STATUS_LABELS.get(self.status, self.status.value)
-
-    @property
-    def duration_seconds(self) -> float | None:
-        """Return active execution duration, excluding queued time."""
-        if not self.started_at:
-            return None
-        end_time = self.finished_at or datetime.now()
-        return max(0.0, (end_time - self.started_at).total_seconds())
-
-    @property
-    def queued_seconds(self) -> float:
-        """Return time spent since creation."""
-        end_time = self.started_at or self.finished_at or datetime.now()
-        return max(0.0, (end_time - self.created_at).total_seconds())
-
-    @property
-    def request_stats(self) -> dict[str, int]:
-        """Return normalized sub-request progress statistics."""
-        statuses = [item.status for item in self.items.values()]
-        succeeded = statuses.count(GenerationTaskItemStatus.SUCCEEDED)
-        failed = statuses.count(GenerationTaskItemStatus.FAILED)
-        cancelled = statuses.count(GenerationTaskItemStatus.CANCELLED)
-        running = statuses.count(GenerationTaskItemStatus.RUNNING)
-        pending = statuses.count(GenerationTaskItemStatus.PENDING)
-        finished = succeeded + failed + cancelled
-        total = max(self.requested_count, len(statuses))
-        return {
-            "total": total,
-            "finished": finished,
-            "succeeded": succeeded,
-            "failed": failed,
-            "cancelled": cancelled,
-            "running": running,
-            "pending": pending,
-            "result_count": self.result_count or len(self.result_paths),
-        }
 
 
 def _task_name(name: str) -> str:
@@ -264,9 +116,7 @@ class TaskManager:
         self._generation_worker_sequence = 0
         self._accepting_generation_tasks = False
         self._generation_shutdown = False
-        self._generation_persistence_file = (
-            Path(persistence_file) if persistence_file else None
-        )
+        self._generation_store = GenerationTaskStore(persistence_file)
 
     def create_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
@@ -385,47 +235,13 @@ class TaskManager:
         if not self._enable_generation_task_history:
             logger.debug(f"{LOG} 生图任务历史持久化已关闭，跳过加载")
             return
-        if not self._generation_persistence_file:
+        if not self._generation_store.has_history_file:
             return
-        persistence_file = self._generation_persistence_file
-        if not persistence_file.exists():
-            return
-
-        try:
-            with persistence_file.open(encoding="utf-8") as f:
-                payload = json.load(f)
-        except Exception as exc:
-            logger.error(f"{LOG} 加载生图任务历史失败: {exc}", exc_info=True)
-            corrupt_path = persistence_file.with_name(
-                f"{persistence_file.name}.{datetime.now().strftime('%Y%m%d%H%M%S')}.corrupt"
-            )
-            try:
-                os.replace(persistence_file, corrupt_path)
-            except Exception as rename_exc:
-                logger.error(
-                    f"{LOG} 保留损坏生图任务历史失败: {rename_exc}",
-                    exc_info=True,
-                )
-            self._generation_tasks = {}
-            return
-
-        raw_tasks = payload.get("tasks", []) if isinstance(payload, dict) else []
-        if isinstance(raw_tasks, dict):
-            raw_tasks = list(raw_tasks.values())
-        if not isinstance(raw_tasks, list):
-            raw_tasks = []
 
         restored_tasks: dict[str, GenerationTaskRecord] = {}
         history_changed = False
         now = datetime.now()
-        for raw_record in raw_tasks:
-            if not isinstance(raw_record, dict):
-                history_changed = True
-                continue
-            record = self._generation_record_from_dict(raw_record)
-            if not record:
-                history_changed = True
-                continue
+        for record in self._generation_store.load():
             if record.status in ACTIVE_GENERATION_STATUSES:
                 record.status = GenerationTaskStatus.CANCELLED
                 record.message = "插件重启导致任务中断"
@@ -503,174 +319,7 @@ class TaskManager:
         """Persist serializable generation task metadata to disk."""
         if not self._enable_generation_task_history:
             return
-        if not self._generation_persistence_file:
-            return
-        payload = {
-            "version": 1,
-            "updated_at": datetime.now().isoformat(),
-            "tasks": [
-                self._generation_record_to_dict(record)
-                for record in self._generation_tasks.values()
-            ],
-        }
-        target_file = self._generation_persistence_file
-        temp_file = target_file.with_name(f"{target_file.name}.tmp")
-        try:
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            with temp_file.open("w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            os.replace(temp_file, target_file)
-        except Exception as exc:
-            logger.error(f"{LOG} 保存生图任务历史失败: {exc}", exc_info=True)
-            try:
-                if temp_file.exists():
-                    temp_file.unlink()
-            except Exception:
-                pass
-
-    def _generation_record_to_dict(
-        self,
-        record: GenerationTaskRecord,
-    ) -> dict[str, Any]:
-        """Convert a generation task record to JSON-safe metadata."""
-        return {
-            "task_id": record.task_id,
-            "source": record.source,
-            "unified_msg_origin": record.unified_msg_origin,
-            "prompt_summary": record.prompt_summary,
-            "reference_image_count": record.reference_image_count,
-            "requested_count": record.requested_count,
-            "result_count": record.result_count,
-            "aspect_ratio": record.aspect_ratio,
-            "resolution": record.resolution,
-            "preset": record.preset,
-            "preset_label": record.preset_label,
-            "status": record.status.value,
-            "message": record.message,
-            "error": record.error,
-            "created_at": self._datetime_to_str(record.created_at),
-            "started_at": self._datetime_to_str(record.started_at),
-            "finished_at": self._datetime_to_str(record.finished_at),
-            "result_paths": list(record.result_paths),
-            "current_index": record.current_index,
-            "retry_attempt": record.retry_attempt,
-            "max_retry_attempts": record.max_retry_attempts,
-            "items": [
-                self._generation_item_to_dict(item)
-                for item in sorted(record.items.values(), key=lambda item: item.index)
-            ],
-            "usage_scope": record.usage_scope,
-            "reserved_count": record.reserved_count,
-            "quota_released": record.quota_released,
-            "quota_settled": record.quota_settled,
-        }
-
-    def _generation_item_to_dict(self, item: GenerationTaskItem) -> dict[str, Any]:
-        """Convert one generation sub-request item to JSON-safe metadata."""
-        return {
-            "index": item.index,
-            "status": item.status.value,
-            "result_count": item.result_count,
-            "error": item.error,
-            "retry_attempts": item.retry_attempts,
-            "max_retry_attempts": item.max_retry_attempts,
-        }
-
-    def _generation_record_from_dict(
-        self,
-        raw_record: dict[str, Any],
-    ) -> GenerationTaskRecord | None:
-        """Restore one generation task record from persisted metadata."""
-        task_id = str(raw_record.get("task_id") or "").strip()
-        if not task_id:
-            return None
-        requested_count = self._safe_int(raw_record.get("requested_count"), 1, 1)
-        try:
-            status = GenerationTaskStatus(str(raw_record.get("status") or "failed"))
-        except ValueError:
-            status = GenerationTaskStatus.FAILED
-
-        record = GenerationTaskRecord(
-            task_id=task_id,
-            source=str(raw_record.get("source") or "历史记录"),
-            unified_msg_origin=str(raw_record.get("unified_msg_origin") or ""),
-            prompt_summary=safe_log_text(raw_record.get("prompt_summary") or "", 80),
-            reference_image_count=self._safe_int(
-                raw_record.get("reference_image_count"),
-                0,
-                0,
-            ),
-            requested_count=requested_count,
-            aspect_ratio=str(raw_record.get("aspect_ratio") or ""),
-            resolution=str(raw_record.get("resolution") or ""),
-            preset=(
-                str(raw_record.get("preset")) if raw_record.get("preset") else None
-            ),
-            preset_label=str(raw_record.get("preset_label") or "预设"),
-            status=status,
-            created_at=self._str_to_datetime(raw_record.get("created_at"))
-            or datetime.now(),
-            started_at=self._str_to_datetime(raw_record.get("started_at")),
-            finished_at=self._str_to_datetime(raw_record.get("finished_at")),
-            message=safe_log_error_body(raw_record.get("message") or "", 300),
-            error=safe_log_error_body(raw_record.get("error") or "", 300),
-            result_count=self._safe_int(raw_record.get("result_count"), 0, 0),
-            result_paths=self._safe_str_list(raw_record.get("result_paths")),
-            current_index=self._safe_int(raw_record.get("current_index"), 0, 0),
-            retry_attempt=self._safe_int(raw_record.get("retry_attempt"), 0, 0),
-            max_retry_attempts=self._safe_int(
-                raw_record.get("max_retry_attempts"),
-                0,
-                0,
-            ),
-            items=self._generation_items_from_raw(
-                raw_record.get("items"),
-                requested_count,
-            ),
-            usage_scope=str(raw_record.get("usage_scope") or ""),
-            reserved_count=self._safe_int(raw_record.get("reserved_count"), 0, 0),
-            quota_released=bool(raw_record.get("quota_released", False)),
-            quota_settled=bool(raw_record.get("quota_settled", False)),
-        )
-        return record
-
-    def _generation_items_from_raw(
-        self,
-        raw_items: Any,
-        requested_count: int,
-    ) -> dict[int, GenerationTaskItem]:
-        """Restore sub-request items from list or legacy dict forms."""
-        items: dict[int, GenerationTaskItem] = {}
-        iterable: list[Any]
-        if isinstance(raw_items, dict):
-            iterable = list(raw_items.values())
-        elif isinstance(raw_items, list):
-            iterable = raw_items
-        else:
-            iterable = []
-
-        for raw_item in iterable:
-            if not isinstance(raw_item, dict):
-                continue
-            index = self._safe_int(raw_item.get("index"), 0, 1)
-            if index <= 0:
-                continue
-            items[index] = GenerationTaskItem(
-                index=index,
-                status=self._safe_generation_item_status(raw_item.get("status")),
-                result_count=self._safe_int(raw_item.get("result_count"), 0, 0),
-                error=safe_log_error_body(raw_item.get("error") or "", 200),
-                retry_attempts=self._safe_int(raw_item.get("retry_attempts"), 0, 0),
-                max_retry_attempts=self._safe_int(
-                    raw_item.get("max_retry_attempts"),
-                    0,
-                    0,
-                ),
-            )
-
-        for index in range(1, max(1, requested_count) + 1):
-            items.setdefault(index, GenerationTaskItem(index=index))
-        return items
+        self._generation_store.save(list(self._generation_tasks.values()))
 
     def _safe_generation_item_status(self, value: Any) -> GenerationTaskItemStatus:
         """Coerce raw persisted item status to a known enum value.
@@ -682,39 +331,7 @@ class TaskManager:
             A valid generation item status. Unknown values fall back to
             ``pending`` so unfinished legacy records remain visible.
         """
-        try:
-            return GenerationTaskItemStatus(str(value or "pending"))
-        except ValueError:
-            return GenerationTaskItemStatus.PENDING
-
-    def _datetime_to_str(self, value: datetime | None) -> str | None:
-        """Serialize a datetime to ISO text."""
-        return value.isoformat() if value else None
-
-    def _str_to_datetime(self, value: Any) -> datetime | None:
-        """Parse an ISO datetime string defensively."""
-        if not value:
-            return None
-        try:
-            return datetime.fromisoformat(str(value))
-        except ValueError:
-            return None
-
-    def _safe_int(self, value: Any, default: int, minimum: int) -> int:
-        """Coerce a value to int and clamp it to a minimum."""
-        if isinstance(value, bool):
-            return default
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return default
-        return max(minimum, parsed)
-
-    def _safe_str_list(self, value: Any) -> list[str]:
-        """Return only string entries from a persisted list."""
-        if not isinstance(value, list):
-            return []
-        return [str(item) for item in value if isinstance(item, str) and item]
+        return coerce_generation_item_status(value)
 
     def start_generation_workers(self, worker_count: int) -> None:
         """Start generation workers and allow new generation tasks.

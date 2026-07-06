@@ -10,6 +10,7 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .generation_task_models import GenerationTaskCreationError, GenerationTaskRecord
 from .logging_utils import (
     log_prefix,
     mask_sensitive,
@@ -22,7 +23,6 @@ from .reference_collector import (
     download_reference_images,
 )
 from .task_id import new_task_id
-from .task_manager import GenerationTaskCreationError, GenerationTaskRecord
 from .template_utils import (
     find_named_entry,
     format_template_summary,

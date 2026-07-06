@@ -13,12 +13,12 @@ from .config_manager import (
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
+from .generation_task_models import GenerationTaskItemStatus
 from .logging_utils import log_prefix, safe_log_text
-from .task_manager import GenerationTaskItemStatus
 
 if TYPE_CHECKING:
     from .config_manager import ConfigManager
-    from .task_manager import GenerationTaskRecord
+    from .generation_task_models import GenerationTaskRecord
     from .usage_manager import UsageManager
 
 
