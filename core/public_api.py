@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from astrbot.api import logger
 
-from .logging_utils import log_prefix, mask_sensitive, safe_log_text
+from .logging_utils import (
+    log_prefix,
+    mask_sensitive,
+    safe_log_error_body,
+    safe_log_text,
+)
 from .reference_collector import (
     collect_reference_images_from_personas,
     deduplicate_reference_images,
     download_reference_images,
 )
 from .task_manager import GenerationTaskRecord
+from .task_manager import GenerationTaskCreationError
 from .task_id import new_task_id
 from .template_utils import (
     find_named_entry,
@@ -43,6 +48,10 @@ class PublicAPIResultCode(str, Enum):
     EMPTY_PROMPT = "empty_prompt"
     RATE_LIMITED = "rate_limited"
     PROMPT_BLOCKED = "prompt_blocked"
+    QUEUE_FULL = "queue_full"
+    REJECTED = "rejected"
+    TASK_MANAGER_CLOSED = "task_manager_closed"
+    TASK_ID_CONFLICT = "task_id_conflict"
     CANCEL_REQUESTED = "cancel_requested"
     CANCEL_FAILED = "cancel_failed"
     NOT_FOUND = "not_found"
@@ -82,6 +91,13 @@ class ImageGenerationTaskSnapshot:
     started_at: datetime | None
     finished_at: datetime | None
     duration_seconds: float | None
+    request_stats: dict[str, int] = field(default_factory=dict)
+    items: list[dict[str, Any]] = field(default_factory=list)
+    finished_request_count: int = 0
+    running_request_count: int = 0
+    pending_request_count: int = 0
+    failed_request_count: int = 0
+    cancelled_request_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -237,34 +253,70 @@ class ImageGenerationPublicAPI:
                     check_result,
                 )
 
-        references = await self._collect_reference_images(
-            reference_image_sources=reference_image_sources,
-            reference_image_data=reference_image_data,
-            persona_images=persona_images,
-            task_id=task_id,
-            unified_msg_origin=scope,
-        )
+        usage_reserved = use_usage_scope
+        task_created = False
+        try:
+            references = await self._collect_reference_images(
+                reference_image_sources=reference_image_sources,
+                reference_image_data=reference_image_data,
+                persona_images=persona_images,
+                task_id=task_id,
+                unified_msg_origin=scope,
+            )
 
-        preset_summary, preset_label = self._format_template_summary(
-            matched_presets,
-            matched_personas,
-        )
-        record = plugin.create_generation_task(
-            task_id=task_id,
-            source=request_source,
-            prompt=final_prompt,
-            images_data=references,
-            unified_msg_origin=scope,
-            aspect_ratio=str(final_aspect_ratio),
-            resolution=str(final_resolution),
-            image_count=requested_count,
-            is_usage_limit_admin=safe_is_admin,
-            preset=preset_summary,
-            preset_label=preset_label,
-            presets=matched_presets,
-            personas=matched_personas,
-            auto_send=False,
-        )
+            preset_summary, preset_label = self._format_template_summary(
+                matched_presets,
+                matched_personas,
+            )
+            record = plugin.create_generation_task(
+                task_id=task_id,
+                source=request_source,
+                prompt=final_prompt,
+                images_data=references,
+                unified_msg_origin=scope,
+                aspect_ratio=str(final_aspect_ratio),
+                resolution=str(final_resolution),
+                image_count=requested_count,
+                is_usage_limit_admin=safe_is_admin,
+                preset=preset_summary,
+                preset_label=preset_label,
+                presets=matched_presets,
+                personas=matched_personas,
+                auto_send=False,
+            )
+            task_created = True
+        except GenerationTaskCreationError as exc:
+            # create_generation_task() rolls back quota reservation on creation failure.
+            usage_reserved = False
+            return self._submit_error(
+                self._task_creation_error_code(exc.code),
+                exc.message,
+                error=exc.code,
+            )
+        except asyncio.CancelledError:
+            if usage_reserved and not task_created:
+                plugin.usage_manager.release_reserved_usage(
+                    scope,
+                    is_admin=safe_is_admin,
+                    count=requested_count,
+                )
+            raise
+        except Exception as exc:
+            if usage_reserved and not task_created:
+                plugin.usage_manager.release_reserved_usage(
+                    scope,
+                    is_admin=safe_is_admin,
+                    count=requested_count,
+                )
+            logger.error(
+                f"{log_prefix('PublicAPI', task_id)} 公共接口提交前处理失败: {safe_log_error_body(exc, 200)}",
+                exc_info=True,
+            )
+            return self._submit_error(
+                PublicAPIResultCode.REJECTED,
+                f"生图任务提交失败: {safe_log_error_body(exc, 160)}",
+                error=safe_log_error_body(exc, 200),
+            )
         return ImageGenerationSubmitResult(
             ok=True,
             code=PublicAPIResultCode.ACCEPTED.value,
@@ -313,6 +365,7 @@ class ImageGenerationPublicAPI:
         poll_interval_seconds: float = DEFAULT_WAIT_POLL_INTERVAL_SECONDS,
     ) -> ImageGenerationResult:
         """Wait until a task finishes and return generated image paths."""
+        _ = poll_interval_seconds  # Kept for backward-compatible signatures.
         normalized_task_id = task_id.strip()
         record = self._plugin.task_manager.get_generation_task(normalized_task_id)
         if not record:
@@ -325,32 +378,45 @@ class ImageGenerationPublicAPI:
                 error=f"任务不存在: {normalized_task_id}",
             )
 
-        deadline = None
-        if timeout_seconds is not None:
-            deadline = time.monotonic() + max(0.0, float(timeout_seconds))
-
-        interval = max(0.05, float(poll_interval_seconds))
-        while record.is_active:
-            if deadline is not None and time.monotonic() >= deadline:
-                return ImageGenerationResult(
-                    ok=False,
-                    code=PublicAPIResultCode.TIMEOUT.value,
-                    message="等待任务完成超时",
-                    task_id=normalized_task_id,
-                    paths=[],
-                    error="等待任务完成超时",
-                )
-            await asyncio.sleep(interval)
-            record = self._plugin.task_manager.get_generation_task(normalized_task_id)
+        if record.is_active:
+            record = await self._plugin.task_manager.wait_generation_task_done(
+                normalized_task_id,
+                timeout_seconds=timeout_seconds,
+            )
             if not record:
-                return ImageGenerationResult(
-                    ok=False,
-                    code=PublicAPIResultCode.NOT_FOUND.value,
-                    message=f"任务不存在: {normalized_task_id}",
-                    task_id=normalized_task_id,
-                    paths=[],
-                    error=f"任务不存在: {normalized_task_id}",
+                current_record = self._plugin.task_manager.get_generation_task(
+                    normalized_task_id
                 )
+                if current_record and not current_record.is_active:
+                    record = current_record
+                elif current_record:
+                    return ImageGenerationResult(
+                        ok=False,
+                        code=PublicAPIResultCode.TIMEOUT.value,
+                        message="等待任务完成超时",
+                        task_id=normalized_task_id,
+                        paths=[],
+                        error="等待任务完成超时",
+                    )
+                else:
+                    return ImageGenerationResult(
+                        ok=False,
+                        code=PublicAPIResultCode.NOT_FOUND.value,
+                        message=f"任务不存在: {normalized_task_id}",
+                        task_id=normalized_task_id,
+                        paths=[],
+                        error=f"任务不存在: {normalized_task_id}",
+                    )
+
+        if record.is_active:
+            return ImageGenerationResult(
+                ok=False,
+                code=PublicAPIResultCode.TIMEOUT.value,
+                message="等待任务完成超时",
+                task_id=normalized_task_id,
+                paths=[],
+                error="等待任务完成超时",
+            )
 
         if record.status.value == "succeeded" and record.result_paths:
             return ImageGenerationResult(
@@ -438,10 +504,20 @@ class ImageGenerationPublicAPI:
             error=error or message,
         )
 
+    def _task_creation_error_code(self, code: str) -> PublicAPIResultCode:
+        if code == PublicAPIResultCode.QUEUE_FULL.value:
+            return PublicAPIResultCode.QUEUE_FULL
+        if code == PublicAPIResultCode.TASK_MANAGER_CLOSED.value:
+            return PublicAPIResultCode.TASK_MANAGER_CLOSED
+        if code == PublicAPIResultCode.TASK_ID_CONFLICT.value:
+            return PublicAPIResultCode.TASK_ID_CONFLICT
+        return PublicAPIResultCode.REJECTED
+
     def _snapshot(
         self,
         record: GenerationTaskRecord,
     ) -> ImageGenerationTaskSnapshot:
+        request_stats = record.request_stats
         return ImageGenerationTaskSnapshot(
             task_id=record.task_id,
             status=record.status.value,
@@ -459,6 +535,25 @@ class ImageGenerationPublicAPI:
             started_at=record.started_at,
             finished_at=record.finished_at,
             duration_seconds=record.duration_seconds,
+            request_stats=dict(request_stats),
+            items=[
+                {
+                    "index": item.index,
+                    "status": item.status,
+                    "result_count": item.result_count,
+                    "error": safe_log_text(item.error, 160) if item.error else "",
+                    "retry_attempts": item.retry_attempts,
+                    "max_retry_attempts": item.max_retry_attempts,
+                }
+                for item in sorted(
+                    record.items.values(), key=lambda task_item: task_item.index
+                )
+            ],
+            finished_request_count=request_stats["finished"],
+            running_request_count=request_stats["running"],
+            pending_request_count=request_stats["pending"],
+            failed_request_count=request_stats["failed"],
+            cancelled_request_count=request_stats["cancelled"],
         )
 
     def _new_task_id(self) -> str:

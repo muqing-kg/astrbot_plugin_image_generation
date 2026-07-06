@@ -56,7 +56,12 @@ from .core.result_formatter import (
 )
 from .core.safety_auditor import SafetyAuditor
 from .core.task_id import new_task_id
-from .core.task_manager import GenerationTaskRecord, TaskManager
+from .core.task_manager import (
+    GenerationTaskCreationError,
+    GenerationTaskRecord,
+    GenerationTaskStatus,
+    TaskManager,
+)
 from .core.template_utils import (
     find_named_entry,
     format_template_summary,
@@ -100,7 +105,10 @@ class ImageGenerationPlugin(Star):
         )
 
         # 初始化任务管理器
-        self.task_manager = TaskManager()
+        self.task_manager = TaskManager(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks,
+            persistence_file=self.data_dir / "generation_tasks.json",
+        )
 
         # 初始化 LLM 工具结果处理器
         self.llm_result_handler = LLMResultHandler(
@@ -133,10 +141,20 @@ class ImageGenerationPlugin(Star):
                 f"{LOG} 初始化生图生成器: "
                 f"供应商={safe_log_text(self.config_manager.adapter_config.name)}，"
                 f"模型={safe_log_text(self.config_manager.adapter_config.model)}，"
-                f"最大并发生图请求={self.config_manager.max_concurrent_tasks}"
+                f"最大并发生图请求={self.config_manager.max_concurrent_tasks}，"
+                f"最大并发完整任务={self.config_manager.max_running_generation_tasks}，"
+                f"最大排队任务={self.config_manager.max_queued_generation_tasks}"
             )
         else:
             logger.error(f"{LOG} 适配器配置加载失败，插件未初始化")
+
+        self.task_manager.load_generation_history()
+        self.task_manager.configure_generation_queue(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
+        self.task_manager.start_generation_workers(
+            self.config_manager.max_running_generation_tasks
+        )
 
         # 注册 LLM 工具
         self._register_llm_tools()
@@ -154,9 +172,9 @@ class ImageGenerationPlugin(Star):
     async def terminate(self):
         """插件卸载时调用"""
         try:
+            await self.task_manager.cancel_all()
             if self.generator:
                 await self.generator.close()
-            await self.task_manager.cancel_all()
             logger.info(f"{LOG} 插件已卸载")
         except Exception as exc:
             logger.error(f"{LOG} 卸载清理出错: {exc}", exc_info=True)
@@ -276,6 +294,12 @@ class ImageGenerationPlugin(Star):
         self.request_semaphore = asyncio.Semaphore(
             self.config_manager.max_concurrent_tasks
         )
+        self.task_manager.configure_generation_queue(
+            max_queued_generation_tasks=self.config_manager.max_queued_generation_tasks
+        )
+        self.task_manager.update_generation_worker_count(
+            self.config_manager.max_running_generation_tasks
+        )
 
     def create_generation_task(
         self,
@@ -303,8 +327,9 @@ class ImageGenerationPlugin(Star):
                 personas or [],
             )
         image_count = self.normalize_image_count(image_count)
-        record = self.task_manager.create_generation_task(
-            self._generate_and_send_image_async(
+
+        def _generation_coro_factory():
+            return self._generate_and_send_image_async(
                 prompt=prompt,
                 images_data=images_data or None,
                 unified_msg_origin=unified_msg_origin,
@@ -315,24 +340,103 @@ class ImageGenerationPlugin(Star):
                 is_usage_limit_admin=is_usage_limit_admin,
                 deliver_via_ai=source == "LLM工具",
                 auto_send=auto_send,
-            ),
-            task_id=task_id,
-            source=source,
-            unified_msg_origin=unified_msg_origin,
-            prompt=prompt,
-            reference_image_count=len(images_data or []),
-            requested_count=image_count,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            preset=preset,
-            preset_label=preset_label,
-        )
+            )
+
+        try:
+            record = self.task_manager.create_generation_task(
+                _generation_coro_factory,
+                task_id=task_id,
+                source=source,
+                unified_msg_origin=unified_msg_origin,
+                prompt=prompt,
+                reference_image_count=len(images_data or []),
+                requested_count=image_count,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                preset=preset,
+                preset_label=preset_label,
+                usage_scope=unified_msg_origin,
+                reserved_count=image_count if unified_msg_origin else 0,
+                is_usage_limit_admin=is_usage_limit_admin,
+                terminal_callback=self._handle_generation_task_terminal,
+            )
+        except GenerationTaskCreationError:
+            self.usage_manager.release_reserved_usage(
+                unified_msg_origin,
+                is_admin=is_usage_limit_admin,
+                count=image_count,
+            )
+            raise
         if source == "LLM工具":
             self.llm_result_handler.attach_task_wakeup(
                 record,
                 source_event=source_event,
             )
         return record
+
+    def _handle_generation_task_terminal(self, record: GenerationTaskRecord) -> None:
+        """Handle quota side effects when a task reaches terminal state.
+
+        Args:
+            record: Terminal generation task record.
+        """
+        if not record.usage_scope or record.quota_released or record.quota_settled:
+            return
+        if record.status == GenerationTaskStatus.SUCCEEDED:
+            self._settle_generation_task_quota_once(
+                record.task_id,
+                actual_count=record.result_count,
+            )
+            return
+        if record.status in {
+            GenerationTaskStatus.FAILED,
+            GenerationTaskStatus.CANCELLED,
+        }:
+            self._release_generation_task_quota_once(record.task_id)
+
+    def _release_generation_task_quota_once(self, task_id: str) -> None:
+        """Release reserved quota for one task at most once.
+
+        Args:
+            task_id: Generation task ID whose reservation should be released.
+        """
+        record = self.task_manager.get_generation_task(task_id)
+        if (
+            not record
+            or not record.usage_scope
+            or record.quota_released
+            or record.quota_settled
+        ):
+            return
+        self.usage_manager.release_reserved_usage(
+            record.usage_scope,
+            is_admin=record.is_usage_limit_admin,
+            count=record.reserved_count,
+        )
+        self.task_manager.mark_generation_task_quota_released(task_id)
+
+    def _settle_generation_task_quota_once(
+        self,
+        task_id: str,
+        *,
+        actual_count: int,
+    ) -> None:
+        """Settle reserved quota for one task at most once.
+
+        Args:
+            task_id: Generation task ID whose reservation should be settled.
+            actual_count: Number of successfully generated images to record.
+        """
+        record = self.task_manager.get_generation_task(task_id)
+        if not record or not record.usage_scope or record.quota_settled:
+            return
+        self.usage_manager.settle_usage(
+            record.usage_scope,
+            is_admin=record.is_usage_limit_admin,
+            reserved_count=record.reserved_count,
+            actual_count=actual_count,
+        )
+        self.task_manager.mark_generation_task_quota_settled(task_id)
 
     def is_usage_limit_admin(self, event: AstrMessageEvent) -> bool:
         """Return whether an event sender is an AstrBot admin for usage limits."""
@@ -639,20 +743,10 @@ class ImageGenerationPlugin(Star):
                 auto_send,
             )
         except asyncio.CancelledError:
-            if unified_msg_origin:
-                self.usage_manager.release_reserved_usage(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                    count=image_count,
-                )
+            self._release_generation_task_quota_once(task_id)
             raise
         except Exception:
-            if unified_msg_origin:
-                self.usage_manager.release_reserved_usage(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                    count=image_count,
-                )
+            self._release_generation_task_quota_once(task_id)
             raise
 
     async def _do_generate_and_send(
@@ -675,12 +769,6 @@ class ImageGenerationPlugin(Star):
         if not self.generator:
             logger.warning(f"{task_log} 生成器未初始化，跳过生成请求")
             self.task_manager.mark_generation_task_failed(task_id, "生图生成器未初始化")
-            if unified_msg_origin:
-                self.usage_manager.release_reserved_usage(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                    count=image_count,
-                )
             return
         logger.debug(
             f"{task_log} 调用生图适配器: 数量={image_count}张，参考图={len(images)}张，"
@@ -706,12 +794,6 @@ class ImageGenerationPlugin(Star):
         if not generated_file_paths:
             error = "; ".join(errors) or "模型未返回图片"
             self.task_manager.mark_generation_task_failed(task_id, error)
-            if unified_msg_origin:
-                self.usage_manager.release_reserved_usage(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                    count=image_count,
-                )
             if deliver_via_ai or not auto_send or not unified_msg_origin:
                 return
             await self.context.send_message(
@@ -732,13 +814,10 @@ class ImageGenerationPlugin(Star):
         )
         if not image_allowed:
             # 生成已消耗模型调用成本，即使审核失败也计入实际生成额度。
-            if unified_msg_origin:
-                self.usage_manager.settle_usage(
-                    unified_msg_origin,
-                    is_admin=is_usage_limit_admin,
-                    reserved_count=image_count,
-                    actual_count=len(generated_file_paths),
-                )
+            self._settle_generation_task_quota_once(
+                task_id,
+                actual_count=len(generated_file_paths),
+            )
             self.task_manager.mark_generation_task_failed(
                 task_id,
                 f"图片内容审核未通过: {image_reason}",
@@ -756,13 +835,10 @@ class ImageGenerationPlugin(Star):
             result_message = f"{result_message}；部分失败: {'; '.join(errors)}"
 
         # 记录实际成功生成的图片数量
-        if unified_msg_origin:
-            self.usage_manager.settle_usage(
-                unified_msg_origin,
-                is_admin=is_usage_limit_admin,
-                reserved_count=image_count,
-                actual_count=len(generated_file_paths),
-            )
+        self._settle_generation_task_quota_once(
+            task_id,
+            actual_count=len(generated_file_paths),
+        )
 
         if deliver_via_ai or not auto_send or not unified_msg_origin:
             self.task_manager.mark_generation_task_succeeded(
@@ -869,13 +945,18 @@ class ImageGenerationPlugin(Star):
                 return
             current_index = next_index
             next_index += 1
+            self.task_manager.update_generation_task_item_result(
+                task_id,
+                index=current_index,
+                status="running",
+            )
             self.task_manager.update_generation_task_progress(
                 task_id,
                 current_index=current_index,
                 result_count=len(generated_file_paths),
                 message=(
-                    f"正在生成第 {current_index}/{image_count} 张，"
-                    f"已完成 {len(generated_file_paths)}/{image_count} 张"
+                    f"子请求 {current_index}/{image_count} 已调度，"
+                    f"结果图片 {len(generated_file_paths)} 张"
                 ),
             )
             task = asyncio.create_task(
@@ -888,7 +969,9 @@ class ImageGenerationPlugin(Star):
                         task_id=task_id,
                         batch_index=current_index,
                         batch_count=image_count,
-                        retry_status_callback=lambda retry_attempt, max_retry_attempts, current_index=current_index: (
+                        retry_status_callback=lambda retry_attempt,
+                        max_retry_attempts,
+                        current_index=current_index: (
                             self.task_manager.update_generation_task_retry_status(
                                 task_id,
                                 current_index=current_index,
@@ -995,11 +1078,20 @@ class ImageGenerationPlugin(Star):
                         task_id,
                         current_index=min(next_index, image_count),
                         result_count=len(generated_file_paths),
-                        message=f"已生成 {len(generated_file_paths)}/{image_count} 张",
+                        message=(
+                            f"子请求 {min(next_index - 1, image_count)}/{image_count} 已完成，"
+                            f"结果图片 {len(generated_file_paths)} 张"
+                        ),
                     )
 
                     if next_index <= image_count:
                         await schedule_next_request()
+        except asyncio.CancelledError:
+            self.task_manager.mark_unfinished_generation_task_items_cancelled(
+                task_id,
+                reason="任务已取消",
+            )
+            raise
         finally:
             for pending_task in pending_tasks:
                 pending_task.cancel()
@@ -1175,27 +1267,81 @@ class ImageGenerationPlugin(Star):
             if check_result:
                 yield event.plain_result(check_result)
             return
+        usage_reserved = True
+        task_created = False
 
         task_id = new_task_id()
-        images_data: list[ImageData] | None = None
-        if self.generator.adapter.get_capabilities() & ImageCapability.IMAGE_TO_IMAGE:
-            try:
-                images_data = await collect_command_reference_images(
-                    self.image_processor,
-                    event,
-                    persona_images,
-                    task_id=task_id,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error(
-                    f"{log_prefix('Task', task_id)} 参考图准备失败: {safe_log_text(exc, 200)}",
-                    exc_info=True,
-                )
-                images_data = []
+        try:
+            images_data: list[ImageData] | None = None
+            if (
+                self.generator.adapter.get_capabilities()
+                & ImageCapability.IMAGE_TO_IMAGE
+            ):
+                try:
+                    images_data = await collect_command_reference_images(
+                        self.image_processor,
+                        event,
+                        persona_images,
+                        task_id=task_id,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.error(
+                        f"{log_prefix('Task', task_id)} 参考图准备失败: {safe_log_text(exc, 200)}",
+                        exc_info=True,
+                    )
+                    images_data = []
 
-        reference_image_count = len(images_data or [])
+            reference_image_count = len(images_data or [])
+
+            try:
+                self.create_generation_task(
+                    task_id=task_id,
+                    source="指令",
+                    prompt=prompt,
+                    images_data=images_data,
+                    unified_msg_origin=event.unified_msg_origin,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    image_count=image_count,
+                    is_usage_limit_admin=is_usage_limit_admin,
+                    preset=preset_or_persona,
+                    preset_label=preset_label,
+                    presets=matched_presets,
+                    personas=matched_personas,
+                )
+                task_created = True
+            except GenerationTaskCreationError:
+                # create_generation_task() rolls back quota reservation on creation failure.
+                usage_reserved = False
+                raise
+        except asyncio.CancelledError:
+            if usage_reserved and not task_created:
+                self.usage_manager.release_reserved_usage(
+                    user_id,
+                    is_admin=is_usage_limit_admin,
+                    count=image_count,
+                )
+            raise
+        except GenerationTaskCreationError as exc:
+            yield event.plain_result(f"❌ 生图任务提交失败: {exc.message}")
+            return
+        except Exception as exc:
+            if usage_reserved and not task_created:
+                self.usage_manager.release_reserved_usage(
+                    user_id,
+                    is_admin=is_usage_limit_admin,
+                    count=image_count,
+                )
+            logger.error(
+                f"{log_prefix('Task', task_id)} 生图任务提交前处理失败: {safe_log_error_body(exc, 200)}",
+                exc_info=True,
+            )
+            yield event.plain_result(
+                f"❌ 生图任务提交失败: {safe_log_error_body(exc, 160)}"
+            )
+            return
 
         msg = self.format_start_task_message(
             prompt=prompt,
@@ -1211,22 +1357,6 @@ class ImageGenerationPlugin(Star):
         )
         if msg:
             yield event.plain_result(msg)
-
-        self.create_generation_task(
-            task_id=task_id,
-            source="指令",
-            prompt=prompt,
-            images_data=images_data,
-            unified_msg_origin=event.unified_msg_origin,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            image_count=image_count,
-            is_usage_limit_admin=is_usage_limit_admin,
-            preset=preset_or_persona,
-            preset_label=preset_label,
-            presets=matched_presets,
-            personas=matched_personas,
-        )
 
     @filter.command("生图模型")
     async def model_command(self, event: AstrMessageEvent, model_index: str = ""):

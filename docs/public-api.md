@@ -24,7 +24,9 @@ api = image_plugin.public_api
   - 不传入时不计用户额度，也不会做用户维度的限制判断
 - 提示词审核和图片审核仍按插件配置执行
 - `task_id` 由 API 自动生成
-- 任务记录保存在内存中，插件重载后会清空
+- 任务历史元数据会持久化，插件重载后最近的已结束任务仍可查询；重启前未完成的任务会恢复为 `cancelled`，不会继续执行
+- 历史任务的 `result_paths` 可能指向已被 AstrBot 清理的临时文件，调用方需要自行检查路径是否仍存在
+- `requested_count` 表示模型接口子请求数量，不保证等于最终图片数量；`result_count` 表示实际保存的结果图片数量
 - 返回对象的 `code` 来自 `core.public_api.PublicAPIResultCode`，调用方可直接与字符串值比较，也可导入该枚举避免手写返回码
 
 ## 接口总览
@@ -95,6 +97,10 @@ async def submit_generation_task(
 | `empty_prompt` | `False` | 最终提示词为空。 |
 | `rate_limited` | `False` | 命中额度、频率或黑名单限制。 |
 | `prompt_blocked` | `False` | 提示词审核未通过。 |
+| `queue_full` | `False` | 生图任务队列已满。 |
+| `task_manager_closed` | `False` | 任务管理器正在关闭或暂不可用。 |
+| `task_id_conflict` | `False` | 自动生成的任务 ID 冲突。 |
+| `rejected` | `False` | 任务因其他创建错误被拒绝。 |
 
 ### 示例
 
@@ -190,7 +196,9 @@ async def wait_generation_result(
 | :--- | :--- |
 | `task_id` | 要等待的任务 ID。 |
 | `timeout_seconds` | 等待超时时间；`None` 表示不主动超时。 |
-| `poll_interval_seconds` | 轮询任务状态的间隔，内部最小值为 `0.05` 秒。 |
+| `poll_interval_seconds` | 兼容旧版本保留；当前优先使用任务完成事件等待。 |
+
+`queued`、`running`、`cancelling` 都是等待过程中的中间状态；本接口会继续等待直到任务进入终态、超时或任务不存在。
 
 ### 返回码
 
@@ -202,7 +210,6 @@ async def wait_generation_result(
 | `not_found` | `False` | 任务不存在。 |
 | `failed` | `False` | 任务失败。 |
 | `cancelled` | `False` | 任务已取消。 |
-| `cancelling` | `False` | 任务处于取消状态后结束时返回。 |
 
 ### 示例
 
@@ -250,7 +257,7 @@ async def generate_image_files(
 | 参数 | 说明 |
 | :--- | :--- |
 | `timeout_seconds` | 等待任务完成的超时时间；提交失败时不会等待。 |
-| `poll_interval_seconds` | 等待任务完成时的轮询间隔。 |
+| `poll_interval_seconds` | 兼容旧版本保留；当前优先使用任务完成事件等待。 |
 
 ## 返回码总览
 
@@ -265,6 +272,10 @@ async def generate_image_files(
 | `empty_prompt` | `submit_generation_task`、`generate_image_files` | `False` | 拼接预设、人设和额外提示词后仍为空。 |
 | `rate_limited` | `submit_generation_task`、`generate_image_files` | `False` | 命中黑名单、频率限制或每日额度限制。 |
 | `prompt_blocked` | `submit_generation_task`、`generate_image_files` | `False` | 提示词审核未通过。 |
+| `queue_full` | `submit_generation_task`、`generate_image_files` | `False` | 生图任务队列已满，任务没有创建。 |
+| `task_manager_closed` | `submit_generation_task`、`generate_image_files` | `False` | 任务管理器正在关闭或暂不可用，任务没有创建。 |
+| `task_id_conflict` | `submit_generation_task`、`generate_image_files` | `False` | 自动生成的任务 ID 冲突，任务没有创建。 |
+| `rejected` | `submit_generation_task`、`generate_image_files` | `False` | 任务因其他创建错误被拒绝。 |
 | `cancel_requested` | `cancel_generation_task` | `True` | 已请求取消任务，或任务已处于取消状态。 |
 | `cancel_failed` | `cancel_generation_task` | `False` | 任务不存在、任务已结束或会话作用域不匹配。 |
 | `not_found` | `wait_generation_result`、`generate_image_files` | `False` | 任务不存在或已被清理。 |
@@ -272,7 +283,6 @@ async def generate_image_files(
 | `succeeded` | `wait_generation_result`、`generate_image_files` | `True` | 任务成功并返回图片路径。 |
 | `no_result` | `wait_generation_result`、`generate_image_files` | `False` | 任务成功结束但没有图片路径。 |
 | `failed` | `wait_generation_result`、`generate_image_files` | `False` | 任务失败。 |
-| `cancelling` | `wait_generation_result`、`generate_image_files` | `False` | 任务处于取消中状态时结束。 |
 | `cancelled` | `wait_generation_result`、`generate_image_files` | `False` | 任务已取消。 |
 
 ### 示例：不计用户额度
@@ -369,11 +379,11 @@ result = await api.generate_image_files(
 | 字段 | 类型 | 说明 |
 | :--- | :--- | :--- |
 | `task_id` | `str` | 任务 ID。 |
-| `status` | `str` | 英文状态：`queued`、`preparing`、`running`、`succeeded`、`failed`、`cancelling`、`cancelled`。 |
+| `status` | `str` | 英文状态：`queued`、`running`、`succeeded`、`failed`、`cancelling`、`cancelled`。 |
 | `active` | `bool` | 任务是否仍在进行。 |
 | `source` | `str` | 任务来源。 |
-| `requested_count` | `int` | 请求生成数量。 |
-| `result_count` | `int` | 已成功生成数量。 |
+| `requested_count` | `int` | 模型接口子请求数量，不保证等于最终图片数量。 |
+| `result_count` | `int` | 实际保存的结果图片数量。 |
 | `reference_image_count` | `int` | 实际参考图数量。 |
 | `aspect_ratio` | `str` | 任务记录中的宽高比参数。 |
 | `resolution` | `str` | 任务记录中的分辨率参数。 |
@@ -384,6 +394,13 @@ result = await api.generate_image_files(
 | `started_at` | `datetime \| None` | 开始运行时间。 |
 | `finished_at` | `datetime \| None` | 结束时间。 |
 | `duration_seconds` | `float \| None` | 运行耗时；未开始时为 `None`。 |
+| `request_stats` | `dict[str, int]` | 子请求统计，包含 `total`、`finished`、`succeeded`、`failed`、`cancelled`、`running`、`pending`、`result_count`。 |
+| `items` | `list[dict]` | 子请求列表，每项包含 `index`、`status`、`result_count`、`error`、`retry_attempts`、`max_retry_attempts`。 |
+| `finished_request_count` | `int` | 已结束子请求数量。 |
+| `running_request_count` | `int` | 运行中子请求数量。 |
+| `pending_request_count` | `int` | 等待中子请求数量。 |
+| `failed_request_count` | `int` | 失败子请求数量。 |
+| `cancelled_request_count` | `int` | 已取消子请求数量。 |
 
 ## 完整任务流程示例
 

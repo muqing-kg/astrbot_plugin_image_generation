@@ -65,12 +65,11 @@ class LLMResultHandler:
         source_event: AstrMessageEvent | None,
     ) -> None:
         """Attach an AI wakeup task to a completed LLM image generation task."""
-        if not source_event or not record.task:
+        if not source_event:
             return
 
-        def _on_done(_task: asyncio.Task) -> None:
-            current_record = self.task_manager.get_generation_task(record.task_id)
-            if current_record and current_record.status in {
+        def _on_done(current_record: GenerationTaskRecord) -> None:
+            if current_record.status in {
                 GenerationTaskStatus.CANCELLING,
                 GenerationTaskStatus.CANCELLED,
             }:
@@ -86,7 +85,7 @@ class LLMResultHandler:
                 f"image_generation_ai_wakeup:{record.task_id}",
             )
 
-        record.task.add_done_callback(_on_done)
+        self.task_manager.add_generation_task_done_callback(record.task_id, _on_done)
 
     def format_tool_start_result(
         self,
@@ -124,7 +123,7 @@ class LLMResultHandler:
             "✅ 生图任务已提交，正在后台执行。",
             f"任务ID: {task_id}",
             "状态: 排队/运行中（尚未完成）",
-            f"数量: {image_count}张",
+            f"请求数量: {image_count}；结果图片数以任务完成为准",
             f"模式: {'图生图' if reference_image_count else '文生图'}",
             f"参考图: {reference_image_count}张",
             f"宽高比: {aspect_ratio}，分辨率: {resolution}",
@@ -155,6 +154,7 @@ class LLMResultHandler:
         supports_image_input: bool,
     ) -> dict[str, Any]:
         """Build structured task result context for the awakened AI."""
+        request_stats = record.request_stats
         payload: dict[str, Any] = {
             "task_id": record.task_id,
             "source": record.source,
@@ -170,6 +170,20 @@ class LLMResultHandler:
             "preset": record.preset or "",
             "result_count": record.result_count,
             "result_paths": record.result_paths,
+            "request_stats": request_stats,
+            "items": [
+                {
+                    "index": item.index,
+                    "status": item.status,
+                    "result_count": item.result_count,
+                    "error": safe_log_text(item.error, 160) if item.error else "",
+                    "retry_attempts": item.retry_attempts,
+                    "max_retry_attempts": item.max_retry_attempts,
+                }
+                for item in sorted(
+                    record.items.values(), key=lambda task_item: task_item.index
+                )
+            ],
             "error": record.error,
             "message": record.message,
             "images_attached_to_model": supports_image_input

@@ -22,7 +22,9 @@ from .constants import (
     DEFAULT_MAX_IMAGES_PER_MESSAGE,
     DEFAULT_MAX_CONCURRENT_TASKS,
     DEFAULT_MAX_IMAGE_SIZE_MB,
+    DEFAULT_MAX_QUEUED_GENERATION_TASKS,
     DEFAULT_MAX_RETRY_ATTEMPTS,
+    DEFAULT_MAX_RUNNING_GENERATION_TASKS,
     DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS,
     DEFAULT_NON_RETRYABLE_STATUS_CODES,
     DEFAULT_PROMPT_AUDIT_PROMPT,
@@ -115,6 +117,8 @@ class GenerationSettings:
     max_image_count: int = DEFAULT_MAX_GENERATION_IMAGE_COUNT
     max_images_per_message: int = DEFAULT_MAX_IMAGES_PER_MESSAGE
     max_concurrent_tasks: int = DEFAULT_MAX_CONCURRENT_TASKS
+    max_running_generation_tasks: int = DEFAULT_MAX_RUNNING_GENERATION_TASKS
+    max_queued_generation_tasks: int = DEFAULT_MAX_QUEUED_GENERATION_TASKS
     debug_request_logging: bool = False
     non_retryable_status_codes: list[int] = field(
         default_factory=lambda: list(DEFAULT_NON_RETRYABLE_STATUS_CODES)
@@ -291,6 +295,18 @@ class ConfigManager:
                 cfg,
                 "max_concurrent_tasks",
                 DEFAULT_MAX_CONCURRENT_TASKS,
+                min_value=1,
+            ),
+            max_running_generation_tasks=self._get_int(
+                cfg,
+                "max_running_generation_tasks",
+                DEFAULT_MAX_RUNNING_GENERATION_TASKS,
+                min_value=1,
+            ),
+            max_queued_generation_tasks=self._get_int(
+                cfg,
+                "max_queued_generation_tasks",
+                DEFAULT_MAX_QUEUED_GENERATION_TASKS,
                 min_value=1,
             ),
             debug_request_logging=self._get_bool(
@@ -858,6 +874,16 @@ class ConfigManager:
     def max_concurrent_tasks(self) -> int:
         """最大并发生图请求数。"""
         return self._plugin_config.generation_settings.max_concurrent_tasks
+
+    @property
+    def max_running_generation_tasks(self) -> int:
+        """最大并发完整生图任务数。"""
+        return self._plugin_config.generation_settings.max_running_generation_tasks
+
+    @property
+    def max_queued_generation_tasks(self) -> int:
+        """最大排队完整生图任务数。"""
+        return self._plugin_config.generation_settings.max_queued_generation_tasks
 
     @property
     def result_info_items(self) -> set[str]:

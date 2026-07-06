@@ -4,6 +4,7 @@ LLM 可调用的图像生成工具模块
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -24,6 +25,7 @@ from .logging_utils import (
 )
 from .reference_collector import collect_tool_reference_images, normalize_string_items
 from .task_id import new_task_id
+from .task_manager import GenerationTaskCreationError
 from .template_utils import (
     format_template_summary,
     normalize_name_items,
@@ -314,44 +316,75 @@ async def _start_generation_task(
                 f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})"
             )
         return check_result
+    usage_reserved = True
+    task_created = False
 
     task_id = new_task_id()
-    capabilities = plugin.generator.adapter.get_capabilities()
     try:
-        images_data = await collect_tool_reference_images(
-            plugin.image_processor,
-            event,
-            capabilities=capabilities,
-            reference_images=reference_images,
-            avatar_references=avatar_references,
-            persona_images=persona_images,
-            task_id=task_id,
-        )
+        capabilities = plugin.generator.adapter.get_capabilities()
+        try:
+            images_data = await collect_tool_reference_images(
+                plugin.image_processor,
+                event,
+                capabilities=capabilities,
+                reference_images=reference_images,
+                avatar_references=avatar_references,
+                persona_images=persona_images,
+                task_id=task_id,
+            )
+        except Exception as exc:
+            logger.error(
+                f"{log_prefix('LLMTool', task_id)} 处理参考图失败: {safe_log_error_body(exc, 200)}",
+                exc_info=True,
+            )
+            images_data = []
+
+        reference_image_count = len(images_data)
+
+        try:
+            plugin.create_generation_task(
+                task_id=task_id,
+                source="LLM工具",
+                prompt=prompt,
+                images_data=images_data,
+                unified_msg_origin=event.unified_msg_origin,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                image_count=image_count,
+                is_usage_limit_admin=is_usage_limit_admin,
+                preset=preset_or_persona,
+                preset_label=preset_label,
+                presets=presets,
+                personas=personas,
+                source_event=event,
+            )
+            task_created = True
+        except GenerationTaskCreationError:
+            # create_generation_task() rolls back quota reservation on creation failure.
+            usage_reserved = False
+            raise
+    except asyncio.CancelledError:
+        if usage_reserved and not task_created:
+            plugin.usage_manager.release_reserved_usage(
+                event.unified_msg_origin,
+                is_admin=is_usage_limit_admin,
+                count=image_count,
+            )
+        raise
+    except GenerationTaskCreationError as exc:
+        return f"❌ 生图任务提交失败: {exc.message} ({exc.code})"
     except Exception as exc:
+        if usage_reserved and not task_created:
+            plugin.usage_manager.release_reserved_usage(
+                event.unified_msg_origin,
+                is_admin=is_usage_limit_admin,
+                count=image_count,
+            )
         logger.error(
-            f"{log_prefix('LLMTool', task_id)} 处理参考图失败: {safe_log_error_body(exc, 200)}",
+            f"{log_prefix('LLMTool', task_id)} 生图任务提交前处理失败: {safe_log_error_body(exc, 200)}",
             exc_info=True,
         )
-        images_data = []
-
-    reference_image_count = len(images_data)
-
-    plugin.create_generation_task(
-        task_id=task_id,
-        source="LLM工具",
-        prompt=prompt,
-        images_data=images_data,
-        unified_msg_origin=event.unified_msg_origin,
-        aspect_ratio=aspect_ratio,
-        resolution=resolution,
-        image_count=image_count,
-        is_usage_limit_admin=is_usage_limit_admin,
-        preset=preset_or_persona,
-        preset_label=preset_label,
-        presets=presets,
-        personas=personas,
-        source_event=event,
-    )
+        return f"❌ 生图任务提交失败: {safe_log_error_body(exc, 160)}"
 
     return plugin.llm_result_handler.format_tool_start_result(
         prompt=prompt,

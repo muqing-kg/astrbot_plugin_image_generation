@@ -1138,6 +1138,28 @@
         },
         "default": 3
       },
+      "max_running_generation_tasks": {
+        "description": "最大并发完整生图任务数",
+        "hint": "同时运行多少个完整生图任务。该配置不同于“最大并发生图请求数”；每个运行中的任务内部仍会受请求级并发限制控制。",
+        "type": "int",
+        "slider": {
+          "min": 1,
+          "max": 10,
+          "step": 1
+        },
+        "default": 1
+      },
+      "max_queued_generation_tasks": {
+        "description": "最大排队生图任务数",
+        "hint": "限制尚未开始运行的完整生图任务数量，不包含正在运行的任务；参考图较多时可降低该值以控制内存占用。",
+        "type": "int",
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        "default": 20
+      },
       "default_image_count": {
         "description": "默认出图数量",
         "hint": "未在指令或 LLM 工具中指定数量时，单个生图任务默认生成的图片数量。",
