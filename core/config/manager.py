@@ -94,12 +94,22 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
         self._validate_config_values()
 
         gen_cfg = self._get_config_section("generation")
+        generation_runtime_cfg = self._get_config_section("generation_runtime")
         user_limits_cfg = self._get_config_section("user_limits")
         safety_cfg = self._get_config_section("safety_audit")
         prompt_templates_cfg = self._get_config_section("prompt_templates")
+        generation_task_history_cfg = self._get_config_section(
+            "generation_task_history"
+        )
         api_providers_raw = self._config.get("api_providers", [])
 
-        all_provider_configs = self._load_provider_configs(api_providers_raw, gen_cfg)
+        fallback_runtime_cfg = (
+            gen_cfg if not generation_runtime_cfg else generation_runtime_cfg
+        )
+        all_provider_configs = self._load_provider_configs(
+            api_providers_raw,
+            fallback_runtime_cfg,
+        )
         self._all_provider_configs = all_provider_configs
 
         self._plugin_config = PluginConfig(
@@ -108,7 +118,11 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
                 self._get_str(gen_cfg, "model", ""),
             ),
             usage_settings=self._parse_usage_settings(user_limits_cfg),
-            generation_settings=self._parse_generation_settings(gen_cfg),
+            generation_settings=self._parse_generation_settings(
+                gen_cfg,
+                generation_runtime_cfg,
+                generation_task_history_cfg,
+            ),
             safety_audit_settings=self._parse_safety_audit_settings(safety_cfg),
             presets=self._load_presets(prompt_templates_cfg.get("presets", [])),
             personas=self._load_personas(prompt_templates_cfg.get("personas", [])),
@@ -153,8 +167,17 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
             ),
         )
 
-    def _parse_generation_settings(self, cfg: dict[str, Any]) -> GenerationSettings:
+    def _parse_generation_settings(
+        self,
+        cfg: dict[str, Any],
+        runtime_cfg: dict[str, Any],
+        history_cfg: dict[str, Any],
+    ) -> GenerationSettings:
         """Parse image generation behavior settings."""
+        # Prefer the standalone runtime and task-history sections, but keep
+        # reading old generation.* values when users upgrade from older versions.
+        fallback_runtime_cfg = cfg if not runtime_cfg else runtime_cfg
+        fallback_history_cfg = cfg if not history_cfg else history_cfg
         return GenerationSettings(
             default_aspect_ratio=self._get_str(
                 cfg,
@@ -185,54 +208,54 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
                 min_value=1,
             ),
             max_concurrent_tasks=self._get_int(
-                cfg,
+                fallback_runtime_cfg,
                 "max_concurrent_tasks",
                 DEFAULT_MAX_CONCURRENT_TASKS,
                 min_value=1,
             ),
             max_running_generation_tasks=self._get_int(
-                cfg,
+                fallback_runtime_cfg,
                 "max_running_generation_tasks",
                 DEFAULT_MAX_RUNNING_GENERATION_TASKS,
                 min_value=1,
             ),
             max_queued_generation_tasks=self._get_int(
-                cfg,
+                fallback_runtime_cfg,
                 "max_queued_generation_tasks",
                 DEFAULT_MAX_QUEUED_GENERATION_TASKS,
                 min_value=1,
             ),
             enable_generation_task_history=self._get_bool(
-                cfg,
+                fallback_history_cfg,
                 "enable_generation_task_history",
                 DEFAULT_ENABLE_GENERATION_TASK_HISTORY,
             ),
             generation_task_history_limit=self._get_int(
-                cfg,
+                fallback_history_cfg,
                 "generation_task_history_limit",
                 DEFAULT_GENERATION_TASK_HISTORY_LIMIT,
                 min_value=1,
             ),
             generation_task_history_retention_days=self._get_int(
-                cfg,
+                fallback_history_cfg,
                 "generation_task_history_retention_days",
                 DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS,
                 min_value=0,
             ),
             debug_request_logging=self._get_bool(
-                cfg,
+                fallback_runtime_cfg,
                 "debug_request_logging",
                 False,
             ),
             non_retryable_status_codes=self._parse_int_list(
-                cfg.get(
+                fallback_runtime_cfg.get(
                     "non_retryable_status_codes",
                     list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
                 ),
                 list(DEFAULT_NON_RETRYABLE_STATUS_CODES),
             ),
             non_retryable_error_keywords=self._parse_string_list_config(
-                cfg.get(
+                fallback_runtime_cfg.get(
                     "non_retryable_error_keywords",
                     list(DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS),
                 ),
