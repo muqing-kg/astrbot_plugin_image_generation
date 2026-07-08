@@ -8,20 +8,20 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import (
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import (
     GITEE_AI_DEFAULT_BASE_URL,
     RESOLUTION_1K_MAP,
     RESOLUTION_2K_MAP,
     UNSPECIFIED_OPTION,
 )
-from ..core.logging_utils import (
+from ..core.shared.logging import (
     safe_log_error_body,
     safe_log_mapping,
     safe_log_text,
     safe_log_url,
 )
-from ..core.types import (
+from ..core.shared.types import (
     GenerationRequest,
     GenerationResult,
     ImageCapability,

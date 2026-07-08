@@ -6,14 +6,18 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import RESOLUTION_1K_MAP, RESOLUTION_2K_MAP, UNSPECIFIED_OPTION
-from ..core.logging_utils import (
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import (
+    RESOLUTION_1K_MAP,
+    RESOLUTION_2K_MAP,
+    UNSPECIFIED_OPTION,
+)
+from ..core.shared.logging import (
     safe_log_error_body,
     safe_log_mapping,
     safe_log_url,
 )
-from ..core.types import GenerationRequest, ImageCapability, ImageData
+from ..core.shared.types import GenerationRequest, ImageCapability, ImageData
 
 
 class AgnesAIAdapter(BaseImageAdapter):

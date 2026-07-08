@@ -1,6 +1,4 @@
-"""
-LLM 可调用的图像生成工具模块
-"""
+"""LLM callable image generation tools."""
 
 from __future__ import annotations
 
@@ -16,29 +14,32 @@ from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
-from .constants import SUPPORTED_ASPECT_RATIOS, SUPPORTED_RESOLUTIONS
-from .generation_task_models import GenerationTaskCreationError
-from .logging_utils import (
+from ..config.templates import (
+    format_template_summary,
+    normalize_name_items as _normalize_name_items,
+    parse_preset_prompt,
+)
+from ..generation.reference_collector import (
+    collect_tool_reference_images,
+    normalize_string_items as _normalize_string_items,
+)
+from ..shared.constants import SUPPORTED_ASPECT_RATIOS, SUPPORTED_RESOLUTIONS
+from ..shared.logging import (
     log_prefix,
     mask_sensitive,
     safe_log_error_body,
     safe_log_text,
 )
-from .reference_collector import collect_tool_reference_images, normalize_string_items
-from .task_id import new_task_id
-from .template_utils import (
-    format_template_summary,
-    normalize_name_items,
-    parse_preset_prompt,
-)
-from .types import ImageCapability
+from ..shared.types import ImageCapability
+from ..tasks.ids import new_task_id
+from ..tasks.models import GenerationTaskCreationError
 
 ASPECT_RATIO_OPTIONS = list(SUPPORTED_ASPECT_RATIOS)
 RESOLUTION_OPTIONS = list(SUPPORTED_RESOLUTIONS)
 LOG = log_prefix("LLMTool")
 
 
-def _extract_event(context: ContextWrapper[AstrAgentContext] | dict[str, Any]) -> Any:
+def extract_event(context: ContextWrapper[AstrAgentContext] | dict[str, Any]) -> Any:
     """Extract AstrBot message event from different tool context wrappers."""
     wrapped_context = getattr(context, "context", None)
     if event := getattr(wrapped_context, "event", None):
@@ -50,25 +51,17 @@ def _extract_event(context: ContextWrapper[AstrAgentContext] | dict[str, Any]) -
     return None
 
 
-def _normalize_string_items(raw: Any) -> list[str]:
+def normalize_string_items(raw: Any) -> list[str]:
     """Normalize one or many string-like values from tool arguments."""
-    return normalize_string_items(raw)
+    return _normalize_string_items(raw)
 
 
-def _normalize_name_items(raw: Any) -> list[str]:
+def normalize_name_items(raw: Any) -> list[str]:
     """Normalize one or many preset/persona names from tool arguments."""
-    return normalize_name_items(raw)
+    return _normalize_name_items(raw)
 
 
-def _format_template_summary(
-    matched_presets: list[str],
-    matched_personas: list[str],
-) -> tuple[str | None, str]:
-    """Format matched preset/persona names for task metadata."""
-    return format_template_summary(matched_presets, matched_personas)
-
-
-def _normalize_preset_query_category(category: str) -> str:
+def normalize_preset_query_category(category: str) -> str:
     """Normalize preset query category aliases."""
     normalized = category.strip().lower()
     if normalized in {
@@ -84,7 +77,7 @@ def _normalize_preset_query_category(category: str) -> str:
     return "preset"
 
 
-def _normalize_preset_edit_action(action: str) -> str:
+def normalize_preset_edit_action(action: str) -> str:
     """Normalize preset edit action aliases."""
     normalized = action.strip().lower()
     if normalized in {"添加", "新增", "保存", "save", "create", "add", "add_preset"}:
@@ -101,7 +94,7 @@ def _normalize_preset_edit_action(action: str) -> str:
     return normalized
 
 
-def _normalize_task_action(action: str) -> str:
+def normalize_task_action(action: str) -> str:
     """Normalize image task management action aliases."""
     normalized = action.strip().lower()
     if normalized in {"", "列表", "查看列表", "list", "list_tasks", "tasks"}:
@@ -113,70 +106,6 @@ def _normalize_task_action(action: str) -> str:
     return normalized
 
 
-def _format_preset_detail(name: str, content: Any) -> str:
-    """Format one preset's full content for query results."""
-    content_text = str(content or "").strip()
-    lines = [f"📋 预设详情: {name}"]
-    if content_text.startswith("{"):
-        try:
-            preset_data = json.loads(content_text)
-        except json.JSONDecodeError:
-            lines.append("格式: 高级 JSON（解析失败，将按原文展示）")
-            lines.append(f"内容: {content_text}")
-            return "\n".join(lines)
-
-        if isinstance(preset_data, dict):
-            lines.append("格式: 高级 JSON")
-            if prompt := str(preset_data.get("prompt", "") or "").strip():
-                lines.append(f"提示词: {prompt}")
-            if aspect_ratio := str(preset_data.get("aspect_ratio", "") or "").strip():
-                lines.append(f"宽高比: {aspect_ratio}")
-            if resolution := str(preset_data.get("resolution", "") or "").strip():
-                lines.append(f"分辨率: {resolution}")
-            if description := str(preset_data.get("description", "") or "").strip():
-                lines.append(f"描述: {description}")
-            lines.append(f"原始内容: {content_text}")
-            return "\n".join(lines)
-
-    lines.append("格式: 简单提示词")
-    lines.append(f"内容: {content_text}")
-    return "\n".join(lines)
-
-
-def _format_persona_detail(name: str, persona: Any) -> str:
-    """Format one persona's full content for query results."""
-    lines = [f"👤 人设详情: {name}"]
-    lines.append(f"提示词: {persona.prompt}")
-    lines.append(f"参考图: {persona.image or '无'}")
-    return "\n".join(lines)
-
-
-def _validate_preset_content(content: str) -> str | None:
-    """Validate preset content when it is written by an LLM tool."""
-    if not content.startswith("{"):
-        return None
-
-    try:
-        preset_data = json.loads(content)
-    except json.JSONDecodeError as exc:
-        return f"高级 JSON 预设格式错误: {exc}"
-
-    if not isinstance(preset_data, dict):
-        return "高级 JSON 预设必须是对象"
-    if not str(preset_data.get("prompt", "") or "").strip():
-        return "高级 JSON 预设必须包含非空 prompt 字段"
-
-    aspect_ratio = str(preset_data.get("aspect_ratio", "") or "").strip()
-    if aspect_ratio and aspect_ratio not in ASPECT_RATIO_OPTIONS:
-        return f"高级 JSON 预设的 aspect_ratio 不支持: {aspect_ratio}"
-
-    resolution = str(preset_data.get("resolution", "") or "").strip()
-    if resolution and resolution not in RESOLUTION_OPTIONS:
-        return f"高级 JSON 预设的 resolution 不支持: {resolution}"
-
-    return None
-
-
 def _parse_preset(
     plugin: Any,
     preset_names: Any,
@@ -185,7 +114,7 @@ def _parse_preset(
     resolution: Any,
 ) -> tuple[str, str, str, list[str], str | None]:
     """Apply one or more preset prompts and optional generation overrides."""
-    names = _normalize_name_items(preset_names)
+    names = normalize_name_items(preset_names)
     if not names:
         return str(prompt).strip(), str(aspect_ratio), str(resolution), [], None
 
@@ -226,7 +155,7 @@ def _parse_persona(
     prompt: str,
 ) -> tuple[str, list[tuple[str, str]], list[str], str | None]:
     """Apply one or more persona prompts and reference images."""
-    names = _normalize_name_items(persona_names)
+    names = normalize_name_items(persona_names)
     if not names:
         return str(prompt).strip(), [], [], None
 
@@ -497,12 +426,12 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
         if not prompt:
             return "❌ 请提供图片生成的提示词、预设或人设"
 
-        preset_or_persona, preset_label = _format_template_summary(
+        preset_or_persona, preset_label = format_template_summary(
             matched_presets,
             matched_personas,
         )
 
-        event = _extract_event(context)
+        event = extract_event(context)
         if not event:
             logger.warning(f"{LOG} 工具调用上下文缺少事件。上下文类型: {type(context)}")
             return "❌ 无法获取当前消息上下文"
@@ -523,6 +452,70 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
             image_count=kwargs.get("image_count")
             or plugin.config_manager.default_image_count,
         )
+
+
+def _format_preset_detail(name: str, content: Any) -> str:
+    """Format one preset's full content for query results."""
+    content_text = str(content or "").strip()
+    lines = [f"📋 预设详情: {name}"]
+    if content_text.startswith("{"):
+        try:
+            preset_data = json.loads(content_text)
+        except json.JSONDecodeError:
+            lines.append("格式: 高级 JSON（解析失败，将按原文展示）")
+            lines.append(f"内容: {content_text}")
+            return "\n".join(lines)
+
+        if isinstance(preset_data, dict):
+            lines.append("格式: 高级 JSON")
+            if prompt := str(preset_data.get("prompt", "") or "").strip():
+                lines.append(f"提示词: {prompt}")
+            if aspect_ratio := str(preset_data.get("aspect_ratio", "") or "").strip():
+                lines.append(f"宽高比: {aspect_ratio}")
+            if resolution := str(preset_data.get("resolution", "") or "").strip():
+                lines.append(f"分辨率: {resolution}")
+            if description := str(preset_data.get("description", "") or "").strip():
+                lines.append(f"描述: {description}")
+            lines.append(f"原始内容: {content_text}")
+            return "\n".join(lines)
+
+    lines.append("格式: 简单提示词")
+    lines.append(f"内容: {content_text}")
+    return "\n".join(lines)
+
+
+def _format_persona_detail(name: str, persona: Any) -> str:
+    """Format one persona's full content for query results."""
+    lines = [f"👤 人设详情: {name}"]
+    lines.append(f"提示词: {persona.prompt}")
+    lines.append(f"参考图: {persona.image or '无'}")
+    return "\n".join(lines)
+
+
+def _validate_preset_content(content: str) -> str | None:
+    """Validate preset content when it is written by an LLM tool."""
+    if not content.startswith("{"):
+        return None
+
+    try:
+        preset_data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        return f"高级 JSON 预设格式错误: {exc}"
+
+    if not isinstance(preset_data, dict):
+        return "高级 JSON 预设必须是对象"
+    if not str(preset_data.get("prompt", "") or "").strip():
+        return "高级 JSON 预设必须包含非空 prompt 字段"
+
+    aspect_ratio = str(preset_data.get("aspect_ratio", "") or "").strip()
+    if aspect_ratio and aspect_ratio not in ASPECT_RATIO_OPTIONS:
+        return f"高级 JSON 预设的 aspect_ratio 不支持: {aspect_ratio}"
+
+    resolution = str(preset_data.get("resolution", "") or "").strip()
+    if resolution and resolution not in RESOLUTION_OPTIONS:
+        return f"高级 JSON 预设的 resolution 不支持: {resolution}"
+
+    return None
 
 
 @pydantic_dataclass
@@ -563,7 +556,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
 
-        event = _extract_event(context)
+        event = extract_event(context)
         if (
             event
             and not plugin.usage_manager.is_limit_exempt(
@@ -574,7 +567,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
         ):
             return plugin.config_manager.usage_settings.blacklist_block_message
 
-        category = _normalize_preset_query_category(
+        category = normalize_preset_query_category(
             str(kwargs.get("category", "preset") or "preset")
         )
         name = str(kwargs.get("name", "") or "").strip()
@@ -618,6 +611,87 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
 
 
 @pydantic_dataclass
+class PresetEditTool(FunctionTool[AstrAgentContext]):
+    """LLM 可调用的预设编辑工具。"""
+
+    name: str = "edit_image_presets"
+    description: str = (
+        "创建或删除生图预设。支持两种预设格式："
+        "1) 简单格式：name + prompt，prompt 直接写普通提示词；"
+        "2) 高级 JSON 格式：prompt 写 JSON 字符串，如 "
+        '{"prompt":"提示词","aspect_ratio":"16:9","resolution":"2K","description":"描述"}。'
+        "只编辑预设，不编辑人设。"
+    )
+    parameters: dict = Field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "要执行的操作。create_preset 创建或覆盖预设，delete_preset 删除预设。",
+                    "enum": ["create_preset", "delete_preset"],
+                },
+                "name": {
+                    "type": "string",
+                    "description": "预设名称。创建和删除均必填。",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": '创建预设时必填。可填写普通提示词，或填写高级 JSON 字符串：{"prompt":"提示词","aspect_ratio":"16:9","resolution":"2K","description":"描述"}。',
+                },
+            },
+            "required": ["action", "name"],
+        }
+    )
+
+    plugin: Any = None
+
+    async def call(
+        self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
+    ) -> ToolExecResult:
+        """执行预设编辑工具调用。"""
+        plugin = self.plugin
+        if not plugin:
+            return "❌ 插件未正确初始化 (Plugin instance missing)"
+
+        event = extract_event(context)
+        if (
+            event
+            and not plugin.usage_manager.is_limit_exempt(
+                event.unified_msg_origin,
+                is_admin=plugin.is_usage_limit_admin(event),
+            )
+            and plugin.usage_manager.is_session_blocked(event.unified_msg_origin)
+        ):
+            return plugin.config_manager.usage_settings.blacklist_block_message
+
+        action = normalize_preset_edit_action(
+            str(kwargs.get("action", "create_preset") or "")
+        )
+        name = str(kwargs.get("name", "") or "").strip()
+        if not name:
+            return "❌ 请提供预设名称"
+
+        if action == "create_preset":
+            prompt = str(kwargs.get("prompt", "") or "").strip()
+            if not prompt:
+                return "❌ 请提供预设内容"
+            if error := _validate_preset_content(prompt):
+                return f"❌ {error}"
+            plugin.config_manager.save_preset(name, prompt)
+            return f"✅ 预设已保存: {name}"
+
+        if action == "delete_preset":
+            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
+            if not matched_name:
+                return f"❌ 预设不存在: {name}"
+            plugin.config_manager.delete_preset(matched_name)
+            return f"✅ 预设已删除: {matched_name}"
+
+        return "❌ 不支持的操作，请使用 create_preset 或 delete_preset"
+
+
+@pydantic_dataclass
 class ImageTaskTool(FunctionTool[AstrAgentContext]):
     """LLM 可调用的生图任务管理工具。"""
 
@@ -656,7 +730,7 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
 
-        event = _extract_event(context)
+        event = extract_event(context)
         if not event:
             logger.warning(
                 f"{LOG} 任务工具调用上下文缺少事件。上下文类型: {type(context)}"
@@ -664,7 +738,7 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
             return "❌ 无法获取当前消息上下文"
 
         unified_msg_origin = event.unified_msg_origin
-        action = _normalize_task_action(str(kwargs.get("action", "list") or "list"))
+        action = normalize_task_action(str(kwargs.get("action", "list") or "list"))
         task_ref = str(kwargs.get("task", "") or "").strip()
 
         if action == "list":
@@ -716,87 +790,6 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
         return "❌ 不支持的操作，请使用 list、detail 或 cancel"
 
 
-@pydantic_dataclass
-class PresetEditTool(FunctionTool[AstrAgentContext]):
-    """LLM 可调用的预设编辑工具。"""
-
-    name: str = "edit_image_presets"
-    description: str = (
-        "创建或删除生图预设。支持两种预设格式："
-        "1) 简单格式：name + prompt，prompt 直接写普通提示词；"
-        "2) 高级 JSON 格式：prompt 写 JSON 字符串，如 "
-        '{"prompt":"提示词","aspect_ratio":"16:9","resolution":"2K","description":"描述"}。'
-        "只编辑预设，不编辑人设。"
-    )
-    parameters: dict = Field(
-        default_factory=lambda: {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "要执行的操作。create_preset 创建或覆盖预设，delete_preset 删除预设。",
-                    "enum": ["create_preset", "delete_preset"],
-                },
-                "name": {
-                    "type": "string",
-                    "description": "预设名称。创建和删除均必填。",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": '创建预设时必填。可填写普通提示词，或填写高级 JSON 字符串：{"prompt":"提示词","aspect_ratio":"16:9","resolution":"2K","description":"描述"}。',
-                },
-            },
-            "required": ["action", "name"],
-        }
-    )
-
-    plugin: Any = None
-
-    async def call(
-        self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
-    ) -> ToolExecResult:
-        """执行预设编辑工具调用。"""
-        plugin = self.plugin
-        if not plugin:
-            return "❌ 插件未正确初始化 (Plugin instance missing)"
-
-        event = _extract_event(context)
-        if (
-            event
-            and not plugin.usage_manager.is_limit_exempt(
-                event.unified_msg_origin,
-                is_admin=plugin.is_usage_limit_admin(event),
-            )
-            and plugin.usage_manager.is_session_blocked(event.unified_msg_origin)
-        ):
-            return plugin.config_manager.usage_settings.blacklist_block_message
-
-        action = _normalize_preset_edit_action(
-            str(kwargs.get("action", "create_preset") or "")
-        )
-        name = str(kwargs.get("name", "") or "").strip()
-        if not name:
-            return "❌ 请提供预设名称"
-
-        if action == "create_preset":
-            prompt = str(kwargs.get("prompt", "") or "").strip()
-            if not prompt:
-                return "❌ 请提供预设内容"
-            if error := _validate_preset_content(prompt):
-                return f"❌ {error}"
-            plugin.config_manager.save_preset(name, prompt)
-            return f"✅ 预设已保存: {name}"
-
-        if action == "delete_preset":
-            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
-            if not matched_name:
-                return f"❌ 预设不存在: {name}"
-            plugin.config_manager.delete_preset(matched_name)
-            return f"✅ 预设已删除: {matched_name}"
-
-        return "❌ 不支持的操作，请使用 create_preset 或 delete_preset"
-
-
 def adjust_tool_parameters(
     tool: FunctionTool[AstrAgentContext], capabilities: ImageCapability
 ) -> None:
@@ -818,3 +811,12 @@ def adjust_tool_parameters(
             if key in props:
                 del props[key]
         logger.debug(f"{LOG} 适配器不支持参考图，已从工具参数中移除参考图相关参数")
+
+
+__all__ = (
+    "ImageGenerationTool",
+    "ImageTaskTool",
+    "PresetEditTool",
+    "PresetQueryTool",
+    "adjust_tool_parameters",
+)

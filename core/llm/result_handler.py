@@ -19,10 +19,10 @@ from astrbot.core.provider.entities import ProviderRequest
 from astrbot.core.tools.message_tools import SendMessageToUserTool
 from astrbot.core.utils.history_saver import persist_agent_history
 
-from .config_manager import ConfigManager
-from .generation_task_models import GenerationTaskRecord, GenerationTaskStatus
-from .logging_utils import log_prefix, safe_log_text
-from .task_manager import TaskManager
+from ..config.manager import ConfigManager
+from ..tasks.models import GenerationTaskRecord, GenerationTaskStatus
+from ..shared.logging import log_prefix, safe_log_text
+from ..tasks.manager import TaskManager
 
 IMAGE_GENERATION_TASK_WOKE_SYSTEM_PROMPT = (
     "You are an autonomous proactive agent.\n\n"

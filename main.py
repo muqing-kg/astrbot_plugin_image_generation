@@ -17,59 +17,59 @@ from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.star.star_tools import StarTools
 from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
 
-from .core.config_manager import (
+from .core.config.manager import (
     LLM_TOOL_IMAGE_GENERATION,
     LLM_TOOL_PRESET_EDIT,
     LLM_TOOL_PRESET_QUERY,
     LLM_TOOL_TASK_MANAGEMENT,
     ConfigManager,
 )
-from .core.generation_executor import GenerationExecutor
-from .core.generation_task_models import (
+from .core.generation.executor import GenerationExecutor
+from .core.tasks.models import (
     GenerationTaskCreationError,
     GenerationTaskRecord,
     GenerationTaskStatus,
 )
-from .core.generator import ImageGenerator
-from .core.image_processor import ImageProcessor
-from .core.llm_result_handler import LLMResultHandler
-from .core.llm_tool import (
+from .core.adapters.generator import ImageGenerator
+from .core.generation.image_processor import ImageProcessor
+from .core.llm.result_handler import LLMResultHandler
+from .core.llm.tools import (
     ImageGenerationTool,
     ImageTaskTool,
     PresetEditTool,
     PresetQueryTool,
     adjust_tool_parameters,
 )
-from .core.logging_utils import (
+from .core.shared.logging import (
     log_prefix,
     mask_sensitive,
     safe_log_error_body,
     safe_log_text,
 )
-from .core.public_api import ImageGenerationPublicAPI
-from .core.reference_collector import collect_command_reference_images
-from .core.result_formatter import (
+from .core.api.public import ImageGenerationPublicAPI
+from .core.generation.reference_collector import collect_command_reference_images
+from .core.formatting.result import (
     format_image_command_help as render_image_command_help,
 )
-from .core.result_formatter import (
+from .core.formatting.result import (
     format_start_task_message as render_start_task_message,
 )
-from .core.result_formatter import (
+from .core.formatting.result import (
     format_task_detail as render_task_detail,
 )
-from .core.result_formatter import (
+from .core.formatting.result import (
     format_task_list as render_task_list,
 )
-from .core.safety_auditor import SafetyAuditor
-from .core.task_id import new_task_id
-from .core.task_manager import TaskManager
-from .core.template_utils import (
+from .core.audit.safety import SafetyAuditor
+from .core.tasks.ids import new_task_id
+from .core.tasks.manager import TaskManager
+from .core.config.templates import (
     find_named_entry,
     format_template_summary,
     parse_preset_prompt,
 )
-from .core.types import ImageCapability, ImageData
-from .core.usage_manager import UsageManager
+from .core.shared.types import ImageCapability, ImageData
+from .core.tasks.usage import UsageManager
 
 LOG = log_prefix("Plugin")
 
@@ -233,7 +233,7 @@ class ImageGenerationPlugin(Star):
         无论当前使用的是哪个渠道。
         """
         from .adapter.jimeng2api_adapter import Jimeng2APIAdapter
-        from .core.types import AdapterType
+        from .core.shared.types import AdapterType
 
         # 检查配置中是否包含即梦渠道（而非检查当前适配器）
         jimeng_config = self.config_manager.get_provider_config(AdapterType.JIMENG2API)
@@ -528,7 +528,7 @@ class ImageGenerationPlugin(Star):
         personas: list[str] | None,
     ) -> dict[str, str]:
         """Build preset/persona placeholder values for the start-task template."""
-        from .core.result_formatter import format_start_template_values
+        from .core.formatting.result import format_start_template_values
 
         return format_start_template_values(
             preset=preset,

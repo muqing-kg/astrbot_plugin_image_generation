@@ -6,20 +6,20 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
-from .config_manager import (
+from ..config.manager import (
     RESULT_INFO_COUNT,
     RESULT_INFO_DURATION,
     RESULT_INFO_MODEL,
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
-from .generation_task_models import GenerationTaskItemStatus
-from .logging_utils import log_prefix, safe_log_text
+from ..tasks.models import GenerationTaskItemStatus
+from ..shared.logging import log_prefix, safe_log_text
 
 if TYPE_CHECKING:
-    from .config_manager import ConfigManager
-    from .generation_task_models import GenerationTaskRecord
-    from .usage_manager import UsageManager
+    from ..config.manager import ConfigManager
+    from ..tasks.models import GenerationTaskRecord
+    from ..tasks.usage import UsageManager
 
 
 LOG = log_prefix("Formatter")

@@ -2,27 +2,15 @@ from __future__ import annotations
 
 from astrbot.api import logger
 
-from ..adapter import (
-    AgnesAIAdapter,
-    CustomHTTPAdapter,
-    GeminiAdapter,
-    GiteeAIAdapter,
-    GrokAdapter,
-    Jimeng2APIAdapter,
-    OpenAIAdapter,
-    OpenAIChatAdapter,
-    SiliconFlowAdapter,
-    VolcengineArkAdapter,
-)
-from .logging_utils import format_cn_log_fields, log_prefix, safe_log_text
-from .types import (
+from ..shared.logging import format_cn_log_fields, log_prefix, safe_log_text
+from ..shared.types import (
     AdapterConfig,
     AdapterType,
     GenerationRequest,
     GenerationResult,
     ImageData,
 )
-from .utils import convert_images_batch
+from ..generation.image_utils import convert_images_batch
 
 
 class ImageGenerator:
@@ -34,6 +22,19 @@ class ImageGenerator:
 
     def _create_adapter(self, config: AdapterConfig):
         """根据配置创建对应的适配器。"""
+        from ...adapter import (
+            AgnesAIAdapter,
+            CustomHTTPAdapter,
+            GeminiAdapter,
+            GiteeAIAdapter,
+            GrokAdapter,
+            Jimeng2APIAdapter,
+            OpenAIAdapter,
+            OpenAIChatAdapter,
+            SiliconFlowAdapter,
+            VolcengineArkAdapter,
+        )
+
         adapter_map: dict[AdapterType, type] = {
             AdapterType.GEMINI: GeminiAdapter,
             AdapterType.OPENAI_CHAT: OpenAIChatAdapter,

@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
-from .constants import USAGE_DATA_RETENTION_DAYS
-from .logging_utils import log_prefix
+from ..shared.constants import USAGE_DATA_RETENTION_DAYS
+from ..shared.logging import log_prefix
 
 if TYPE_CHECKING:
-    from .config_manager import UsageSettings
+    from ..config.manager import UsageSettings
 
 
 LOG = log_prefix("Usage")

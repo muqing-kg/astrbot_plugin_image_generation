@@ -8,8 +8,8 @@ import re
 from astrbot.api import logger
 from astrbot.api.star import Context
 
-from .config_manager import ConfigManager
-from .logging_utils import log_prefix, safe_log_text
+from ..config.manager import ConfigManager
+from ..shared.logging import log_prefix, safe_log_text
 
 LOG = log_prefix("SafetyAudit")
 

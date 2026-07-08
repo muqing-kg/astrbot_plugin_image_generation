@@ -8,10 +8,10 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import UNSPECIFIED_OPTION
-from ..core.logging_utils import safe_log_error_body, safe_log_url
-from ..core.types import GenerationRequest, ImageCapability, ImageData
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import UNSPECIFIED_OPTION
+from ..core.shared.logging import safe_log_error_body, safe_log_url
+from ..core.shared.types import GenerationRequest, ImageCapability, ImageData
 
 PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 EXACT_PLACEHOLDER_PATTERN = re.compile(r"^\{([a-zA-Z0-9_]+)\}$")

@@ -7,19 +7,19 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.star import Context
 
-from .config_manager import ConfigManager
-from .constants import UNSPECIFIED_OPTION
-from .generator import ImageGenerator
+from ..config.manager import ConfigManager
+from ..shared.constants import UNSPECIFIED_OPTION
+from ..adapters.generator import ImageGenerator
 from .image_processor import ImageProcessor
-from .logging_utils import log_prefix, safe_log_error_body, safe_log_text
+from ..shared.logging import log_prefix, safe_log_error_body, safe_log_text
 from .reference_collector import ensure_image_data
-from .result_formatter import build_result_info_message
-from .safety_auditor import SafetyAuditor
-from .task_id import new_task_id
-from .task_manager import TaskManager
-from .types import GenerationRequest, ImageCapability, ImageData
-from .usage_manager import UsageManager
-from .utils import validate_aspect_ratio, validate_resolution
+from ..formatting.result import build_result_info_message
+from ..audit.safety import SafetyAuditor
+from ..tasks.ids import new_task_id
+from ..tasks.manager import TaskManager
+from ..shared.types import GenerationRequest, ImageCapability, ImageData
+from ..tasks.usage import UsageManager
+from .image_utils import validate_aspect_ratio, validate_resolution
 
 LOG = log_prefix("GenerationExecutor")
 

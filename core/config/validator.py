@@ -8,7 +8,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .logging_utils import log_prefix
+from ..shared.logging import log_prefix
 
 LOG = log_prefix("Config")
 SCHEMA_DEFAULT_FACTORIES: dict[str, Any] = {

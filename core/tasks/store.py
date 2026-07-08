@@ -8,13 +8,13 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .generation_task_models import (
+from .models import (
     GenerationTaskItem,
     GenerationTaskRecord,
     GenerationTaskStatus,
     coerce_generation_item_status,
 )
-from .logging_utils import log_prefix, safe_log_error_body, safe_log_text
+from ..shared.logging import log_prefix, safe_log_error_body, safe_log_text
 
 LOG = log_prefix("GenerationTaskStore")
 
