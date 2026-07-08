@@ -754,6 +754,10 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
                 include_finished=True,
             )
             if not record:
+                if task_ref.isdigit():
+                    return (
+                        "❌ 未找到编号对应的进行中任务；已结束任务请使用完整任务ID查看"
+                    )
                 return f"❌ 任务不存在或已被清理: {task_ref}"
             return plugin.format_task_detail(record)
 
@@ -765,14 +769,14 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
                     limit=5,
                 )
                 if active_records:
-                    return "❌ 请提供要取消的任务ID\n" + plugin.format_task_list(
+                    return "❌ 请提供要取消的编号或任务ID\n" + plugin.format_task_list(
                         active_records
                     )
                 return "📭 当前没有可取消的生图任务"
 
             record = plugin.resolve_active_task_reference(unified_msg_origin, task_ref)
             if not record:
-                return f"❌ 正在进行的任务不存在: {task_ref}"
+                return f"❌ 未找到对应的进行中任务，请检查编号或任务ID: {task_ref}"
             _, message = plugin.task_manager.cancel_generation_task(
                 record.task_id,
                 unified_msg_origin=unified_msg_origin,

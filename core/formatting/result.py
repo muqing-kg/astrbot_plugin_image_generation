@@ -13,7 +13,8 @@ from ..config.manager import (
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
-from ..tasks.models import GenerationTaskItemStatus
+from ..shared.constants import UNSPECIFIED_OPTION
+from ..tasks.models import GenerationTaskItemStatus, GenerationTaskStatus
 from ..shared.logging import log_prefix, safe_log_text
 
 if TYPE_CHECKING:
@@ -113,51 +114,99 @@ def format_start_task_message(
 def format_task_detail(record: GenerationTaskRecord) -> str:
     """Format one task record for command output."""
     stats = record.request_stats
-    lines = [f"🧾 任务 {record.task_id}: {record.status_label}"]
-    lines.append(f"来源: {record.source}")
-    lines.append(f"提示词: {record.prompt_summary or '无'}")
-    lines.append(f"参考图: {record.reference_image_count}张")
-    lines.append(f"宽高比: {record.aspect_ratio}，分辨率: {record.resolution}")
-    if record.preset:
-        lines.append(f"{record.preset_label}: {record.preset}")
-
-    lines.append(
-        "子请求: "
-        f"{stats['finished']}/{stats['total']} 已结束"
-        f"（运行中 {stats['running']}，等待 {stats['pending']}，"
-        f"失败 {stats['failed']}，取消 {stats['cancelled']}）"
+    status_icons = {
+        GenerationTaskStatus.QUEUED: "⏳",
+        GenerationTaskStatus.RUNNING: "🔄",
+        GenerationTaskStatus.SUCCEEDED: "✅",
+        GenerationTaskStatus.FAILED: "❌",
+        GenerationTaskStatus.CANCELLING: "🛑",
+        GenerationTaskStatus.CANCELLED: "🚫",
+    }
+    aspect_ratio = (
+        record.aspect_ratio if record.aspect_ratio != UNSPECIFIED_OPTION else "模型默认"
     )
-    lines.append(f"结果图片: {stats['result_count']}张")
+    resolution = (
+        record.resolution if record.resolution != UNSPECIFIED_OPTION else "模型默认"
+    )
+    prompt_text = record.prompt_summary or "无"
+    if len(prompt_text) > 64:
+        prompt_text = f"{prompt_text[:64]}..."
 
+    total_requests = max(1, stats["total"])
+    finished_requests = min(stats["finished"], total_requests)
+    progress_percent = int(finished_requests / total_requests * 100)
+    progress_blocks = int(finished_requests / total_requests * 10)
+    progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+    distribution_parts = []
+    if stats["succeeded"]:
+        distribution_parts.append(f"✅ 成功 {stats['succeeded']}")
+    if stats["failed"]:
+        distribution_parts.append(f"❌ 失败 {stats['failed']}")
+    if stats["cancelled"]:
+        distribution_parts.append(f"🚫 取消 {stats['cancelled']}")
+    if stats["running"]:
+        distribution_parts.append(f"🔄 运行中 {stats['running']}")
+    if stats["pending"]:
+        distribution_parts.append(f"⏳ 等待 {stats['pending']}")
+
+    lines = [
+        f"🧾 生图任务 {record.task_id}",
+        f"状态：{status_icons.get(record.status, '📌')} {record.status_label} ｜ 来源：{record.source}",
+        "",
+        "📌 请求",
+        f"- 模式：{'图生图' if record.reference_image_count else '文生图'} ｜ 参考图：{record.reference_image_count}张",
+        f"- 尺寸：宽高比 {aspect_ratio} ｜ 分辨率 {resolution}",
+    ]
+    if record.preset:
+        lines.append(f"- 模板：{record.preset_label}「{record.preset}」")
+    lines.append(f"- 提示词摘要：{prompt_text}")
+
+    lines.extend(
+        [
+            "",
+            "📊 进度",
+            f"- 完成：{finished_requests}/{total_requests}（{progress_percent}%） {progress_bar}",
+            "- 状态：" + "，".join(distribution_parts or ["暂无子请求状态"]),
+            f"- 结果：{stats['result_count']}张图片",
+        ]
+    )
+
+    time_parts = [f"排队 {record.queued_seconds:.2f}s"]
     if record.started_at:
         duration = record.duration_seconds
         if duration is not None:
-            lines.append(f"耗时: {duration:.2f}s")
-    else:
-        lines.append(f"排队: {record.queued_seconds:.2f}s")
+            time_parts.append(f"执行 {duration:.2f}s")
+    lines.append("- 时间：" + " ｜ ".join(time_parts))
 
-    if record.message:
-        lines.append(f"说明: {record.message}")
+    if record.message and record.message not in {"任务已提交", "任务运行中"}:
+        lines.append(f"- 当前：{safe_log_text(record.message, 80)}")
+    if record.error:
+        lines.append(f"- 错误：{safe_log_text(record.error, 120)}")
     if record.items:
-        lines.append("子请求:")
+        lines.extend(["", "🧩 明细"])
         for item in sorted(
             record.items.values(), key=lambda task_item: task_item.index
         ):
             if item.status == GenerationTaskItemStatus.SUCCEEDED:
-                item_line = f"  {item.index}. 成功，结果 {item.result_count} 张"
+                item_line = f"- #{item.index} ✅ 成功，结果 {item.result_count} 张"
             elif item.status == GenerationTaskItemStatus.FAILED:
-                item_line = f"  {item.index}. 失败"
+                item_line = f"- #{item.index} ❌ 失败"
                 if item.error:
                     item_line += f"，错误: {safe_log_text(item.error, 120)}"
             elif item.status == GenerationTaskItemStatus.CANCELLED:
-                item_line = f"  {item.index}. 已取消"
+                item_line = f"- #{item.index} 🚫 已取消"
             elif item.status == GenerationTaskItemStatus.PENDING:
-                item_line = f"  {item.index}. 等待中"
+                item_line = f"- #{item.index} ⏳ 等待中"
             else:
-                item_line = f"  {item.index}. 运行中"
+                item_line = f"- #{item.index} 🔄 运行中"
             if item.max_retry_attempts:
                 item_line += f"，重试 {item.retry_attempts}/{item.max_retry_attempts}"
             lines.append(item_line)
+    lines.append("")
+    if record.is_active:
+        lines.append(f"💡 可取消：/生图取消 {record.task_id}")
+    else:
+        lines.append("💡 已结束任务只保留最近历史记录，之后可能被自动清理")
     return "\n".join(lines)
 
 
