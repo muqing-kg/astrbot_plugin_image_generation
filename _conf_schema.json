@@ -33,8 +33,8 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
+            "description": "接口地址",
+            "hint": "可选。留空使用适配器默认地址；也可填写兼容接口地址。",
             "type": "string",
             "default": ""
           },
@@ -79,7 +79,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -90,7 +90,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -113,8 +113,8 @@
             "type": "string"
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "填写API地址",
+            "description": "接口地址",
+            "hint": "填写 OpenAI Chat Completions 兼容接口地址。",
             "type": "string",
             "default": ""
           },
@@ -157,7 +157,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -168,7 +168,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -185,7 +185,7 @@
           },
           "modalities": {
             "description": "输出模态",
-            "hint": "发送到请求体的 modalities 字段；部分兼容接口需要 image,text，留空则不发送。",
+            "hint": "发送到请求体的 modalities 字段；部分兼容接口需要 image、text，留空则不发送。",
             "type": "list",
             "default": [
               "image",
@@ -215,8 +215,8 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
+            "description": "接口地址",
+            "hint": "可选。留空使用适配器默认地址；也可填写兼容接口地址。",
             "type": "string",
             "default": ""
           },
@@ -262,7 +262,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -273,7 +273,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -308,8 +308,8 @@
             "default": "火山方舟"
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "默认 https://ark.cn-beijing.volces.com；也可填写包含 /api/v3 的完整地址。",
+            "description": "接口地址",
+            "hint": "默认使用 https://ark.cn-beijing.volces.com；也可填写包含 /api/v3 的完整地址。",
             "type": "string",
             "default": "https://ark.cn-beijing.volces.com"
           },
@@ -327,7 +327,7 @@
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换；请按控制台实际 Model ID 或 Endpoint ID 维护。",
+            "hint": "用于 /生图模型 命令切换；请按控制台实际模型 ID 或 Endpoint ID 维护。",
             "type": "list",
             "default": [
               "doubao-seedream-5-0-260128",
@@ -354,7 +354,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -365,7 +365,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -444,8 +444,8 @@
             "default": "硅基流动"
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "默认 https://api.siliconflow.cn；也可填写包含 /v1 的地址，插件会自动规范化。",
+            "description": "接口地址",
+            "hint": "默认使用 https://api.siliconflow.cn；也可填写包含 /v1 的地址，插件会自动规范化。",
             "type": "string",
             "default": "https://api.siliconflow.cn"
           },
@@ -491,7 +491,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -502,7 +502,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -549,8 +549,8 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "默认 https://ai.gitee.com。",
+            "description": "接口地址",
+            "hint": "默认使用 https://ai.gitee.com；也可填写兼容接口地址。",
             "type": "string",
             "default": "https://ai.gitee.com"
           },
@@ -626,7 +626,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -637,7 +637,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -661,8 +661,8 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "可选。留空使用 https://apihub.agnes-ai.com；也可填写兼容的 API Base URL。",
+            "description": "接口地址",
+            "hint": "可选。留空使用 https://apihub.agnes-ai.com；也可填写兼容接口地址。",
             "type": "string",
             "default": ""
           },
@@ -699,7 +699,7 @@
           },
           "capability_options": {
             "description": "模型能力",
-            "hint": "按模型能力勾选；比例映射为 size，不发 aspect_ratio。",
+            "hint": "按模型实际能力勾选；宽高比会映射为 size 字段，不会发送 aspect_ratio。",
             "type": "list",
             "options": [
               "文生图",
@@ -716,7 +716,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -727,7 +727,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -751,7 +751,7 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
+            "description": "接口地址",
             "hint": "填写 jimeng-api 服务地址。",
             "type": "string",
             "default": ""
@@ -796,7 +796,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -807,7 +807,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -831,8 +831,8 @@
             "default": ""
           },
           "base_url": {
-            "description": "API Base URL",
-            "hint": "可选。留空使用适配器默认地址，或填写兼容的 API Base URL。",
+            "description": "接口地址",
+            "hint": "可选。留空使用适配器默认地址；也可填写兼容接口地址。",
             "type": "string",
             "default": ""
           },
@@ -876,7 +876,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -887,7 +887,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -911,20 +911,20 @@
             "default": "自定义HTTP"
           },
           "base_url": {
-            "description": "API Base URL",
+            "description": "接口地址",
             "hint": "接口基础地址。自定义 HTTP 不会自动移除 /v1 路径。",
             "type": "string",
             "default": ""
           },
           "endpoint": {
-            "description": "Endpoint",
-            "hint": "可选。与 API Base URL 拼接，例如 /v1/images/generations；如果填写完整 http(s) 地址则直接使用。",
+            "description": "接口路径",
+            "hint": "可选。与接口地址拼接，例如 /v1/images/generations；如果填写完整 http(s) 地址则直接使用。",
             "type": "string",
             "default": "/v1/images/generations"
           },
           "request_method": {
             "description": "请求方法",
-            "hint": "第一版主要面向 JSON 接口，推荐使用 POST。",
+            "hint": "推荐使用 POST；仅在目标接口明确要求时选择其他方法。",
             "type": "string",
             "options": [
               "GET",
@@ -974,7 +974,7 @@
           },
           "timeout": {
             "description": "超时时间覆盖（秒）",
-            "hint": "填 0 表示使用全局超时时间。",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -985,7 +985,7 @@
           },
           "max_retry_attempts": {
             "description": "重试次数覆盖",
-            "hint": "填 0 表示使用全局重试次数。",
+            "hint": "填 0 表示使用“运行控制”中的重试次数。",
             "type": "int",
             "slider": {
               "min": 0,
@@ -1004,7 +1004,7 @@
           },
           "query_params_json": {
             "description": "查询参数 JSON",
-            "hint": "JSON 对象，会作为 URL 查询参数发送；支持占位符。",
+            "hint": "JSON 对象，会作为 URL 查询参数发送；支持占位符：{api_key}、{model}、{prompt}、{task_id} 等。",
             "type": "string",
             "editor_mode": true,
             "editor_language": "json",
@@ -1056,8 +1056,8 @@
     }
   },
   "generation": {
-    "description": "生成设置",
-    "hint": "配置默认模型、并发、超时、分辨率、出图数量和提示消息。",
+    "description": "生成与结果设置",
+    "hint": "配置默认模型、默认出图参数、结果展示和任务开始提示。",
     "type": "object",
     "items": {
       "model": {
@@ -1065,128 +1065,6 @@
         "hint": "可通过 /生图模型 命令切换；格式为“供应商名称/模型名称”。留空时自动使用第一个可用模型。",
         "type": "string",
         "default": ""
-      },
-      "timeout": {
-        "description": "全局超时时间（秒）",
-        "type": "int",
-        "slider": {
-          "min": 60,
-          "max": 600,
-          "step": 10
-        },
-        "default": 180
-      },
-      "max_retry_attempts": {
-        "description": "全局重试次数",
-        "type": "int",
-        "slider": {
-          "min": 0,
-          "max": 10,
-          "step": 1
-        },
-        "default": 3
-      },
-      "debug_request_logging": {
-        "description": "打印 Debug 请求日志",
-        "hint": "在开启框架 Debug 日志的情况下，打印 JSON 请求/响应结构，长字符串会摘要。",
-        "type": "bool",
-        "default": false
-      },
-      "non_retryable_status_codes": {
-        "description": "不可重试 HTTP 状态码",
-        "hint": "命中这些状态码时会立即失败，例如参数错误、鉴权失败、权限不足或资源不存在。",
-        "type": "list",
-        "items_type": "int",
-        "default": [
-          400,
-          401,
-          403,
-          404,
-          405,
-          422
-        ]
-      },
-      "non_retryable_error_keywords": {
-        "description": "不可重试错误关键词",
-        "hint": "错误文本包含这些关键词时会立即失败；用于识别参数错误、模型不支持或内容安全拒绝。",
-        "type": "list",
-        "default": [
-          "参数",
-          "无效",
-          "不支持",
-          "未配置 API Key",
-          "invalid",
-          "bad request",
-          "unauthorized",
-          "forbidden",
-          "permission",
-          "not found",
-          "unsupported",
-          "safety",
-          "content policy",
-          "policy violation"
-        ]
-      },
-      "max_concurrent_tasks": {
-        "description": "最大并发生图请求数",
-        "hint": "同时调用图像模型接口的请求上限，用于控制资源占用；多图任务会在该限制内并发请求，完成一个后继续补发剩余请求。",
-        "type": "int",
-        "slider": {
-          "min": 1,
-          "max": 10,
-          "step": 1
-        },
-        "default": 3
-      },
-      "max_running_generation_tasks": {
-        "description": "最大并发完整生图任务数",
-        "hint": "同时运行多少个完整生图任务。该配置不同于“最大并发生图请求数”；每个运行中的任务内部仍会受请求级并发限制控制。",
-        "type": "int",
-        "slider": {
-          "min": 1,
-          "max": 10,
-          "step": 1
-        },
-        "default": 1
-      },
-      "max_queued_generation_tasks": {
-        "description": "最大排队生图任务数",
-        "hint": "限制尚未开始运行的完整生图任务数量，不包含正在运行的任务；参考图较多时可降低该值以控制内存占用。",
-        "type": "int",
-        "slider": {
-          "min": 1,
-          "max": 100,
-          "step": 1
-        },
-        "default": 20
-      },
-      "enable_generation_task_history": {
-        "description": "持久化生图任务历史",
-        "hint": "开启后会将任务状态、会话标识、提示词摘要、结果路径和错误摘要保存到插件数据目录；关闭后仅保留运行期内存任务。",
-        "type": "bool",
-        "default": true
-      },
-      "generation_task_history_limit": {
-        "description": "生图任务历史保留条数",
-        "hint": "最多保留多少条生图任务记录；活跃任务不会因历史裁剪被删除。",
-        "type": "int",
-        "slider": {
-          "min": 1,
-          "max": 1000,
-          "step": 1
-        },
-        "default": 100
-      },
-      "generation_task_history_retention_days": {
-        "description": "生图任务历史保留天数",
-        "hint": "已结束任务超过该天数会被清理；设置为 0 表示不按时间清理，仅按条数限制。",
-        "type": "int",
-        "slider": {
-          "min": 0,
-          "max": 365,
-          "step": 1
-        },
-        "default": 0
       },
       "default_image_count": {
         "description": "默认出图数量",
@@ -1223,7 +1101,7 @@
       },
       "default_aspect_ratio": {
         "description": "默认宽高比",
-        "hint": "命令生图时默认使用的宽高比；选择“不指定”时请求中不携带比例字段。",
+        "hint": "默认使用的宽高比；选择“不指定”时请求中不携带比例字段。",
         "type": "string",
         "default": "不指定",
         "options": [
@@ -1242,7 +1120,7 @@
       },
       "default_resolution": {
         "description": "默认分辨率",
-        "hint": "命令生图时默认使用的分辨率；选择“不指定”时请求中不携带分辨率字段",
+        "hint": "默认使用的分辨率；选择“不指定”时请求中不携带分辨率字段。",
         "type": "string",
         "default": "不指定",
         "options": [
@@ -1272,6 +1150,109 @@
         "hint": "任务开始时发送的提示。支持占位符：{reference_image_count}、{image_count}、{count}、{prompt}、{preset}、{presets}、{persona}、{personas}、{aspect_ratio}、{resolution}、{task_id}、{model}、{mode}、{reference_images_block}、{image_count_block}、{count_block}、{preset_block}、{persona_block}。留空则不发送。",
         "type": "text",
         "default": "已开始生图任务{reference_images_block}{preset_block}{persona_block}{image_count_block} [任务ID: {task_id}]"
+      }
+    }
+  },
+  "generation_runtime": {
+    "description": "运行控制",
+    "hint": "配置生图运行时的超时、重试、并发、队列、不可重试错误和调试日志。",
+    "type": "object",
+    "items": {
+      "timeout": {
+        "description": "超时时间（秒）",
+        "hint": "单次模型请求的默认超时时间；供应商配置可单独覆盖。",
+        "type": "int",
+        "slider": {
+          "min": 60,
+          "max": 600,
+          "step": 10
+        },
+        "default": 180
+      },
+      "max_retry_attempts": {
+        "description": "重试次数",
+        "hint": "单次模型请求失败后的默认重试次数；供应商配置可单独覆盖。",
+        "type": "int",
+        "slider": {
+          "min": 0,
+          "max": 10,
+          "step": 1
+        },
+        "default": 3
+      },
+      "debug_request_logging": {
+        "description": "打印调试请求日志",
+        "hint": "开启后在 debug 日志中打印 JSON 请求/响应结构；长字符串、Base64 和 data URL 会摘要处理。",
+        "type": "bool",
+        "default": false
+      },
+      "non_retryable_status_codes": {
+        "description": "不可重试 HTTP 状态码",
+        "hint": "命中这些 HTTP 状态码时立即失败，不再重试。适用于参数错误、鉴权失败、权限不足或资源不存在等场景。",
+        "type": "list",
+        "items_type": "int",
+        "default": [
+          400,
+          401,
+          403,
+          404,
+          405,
+          422
+        ]
+      },
+      "non_retryable_error_keywords": {
+        "description": "不可重试错误关键词",
+        "hint": "错误文本包含这些关键词时立即失败，不再重试。适用于参数错误、模型不支持或内容安全拒绝等场景。",
+        "type": "list",
+        "default": [
+          "参数",
+          "无效",
+          "不支持",
+          "未配置 API Key",
+          "invalid",
+          "bad request",
+          "unauthorized",
+          "forbidden",
+          "permission",
+          "not found",
+          "unsupported",
+          "safety",
+          "content policy",
+          "policy violation"
+        ]
+      },
+      "max_concurrent_tasks": {
+        "description": "最大并发生图请求数",
+        "hint": "同时调用图像模型接口的请求上限；多图任务会在该限制内并发请求，完成一个后继续补发剩余请求。",
+        "type": "int",
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        "default": 3
+      },
+      "max_running_generation_tasks": {
+        "description": "最大并发完整生图任务数",
+        "hint": "同时运行的完整生图任务数量上限；每个运行中任务内部仍受请求级并发限制控制。",
+        "type": "int",
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        },
+        "default": 1
+      },
+      "max_queued_generation_tasks": {
+        "description": "最大排队生图任务数",
+        "hint": "尚未开始运行的完整生图任务数量上限，不包含正在运行的任务；队列满时会拒绝新任务。",
+        "type": "int",
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        "default": 20
       }
     }
   },
@@ -1310,8 +1291,8 @@
         "type": "int",
         "slider": {
           "min": 0,
-          "max": 60,
-          "step": 1
+          "max": 600,
+          "step": 30
         },
         "default": 0
       },
@@ -1338,8 +1319,8 @@
         "type": "int",
         "slider": {
           "min": 1,
-          "max": 50,
-          "step": 10
+          "max": 100,
+          "step": 1
         },
         "default": 10
       }
@@ -1373,8 +1354,8 @@
             "default": false
           },
           "ai_provider_id": {
-            "description": "AI 审核 Provider",
-            "hint": "选择用于审核的对话模型 Provider；留空时使用当前会话模型。",
+            "description": "AI 审核模型",
+            "hint": "选择用于提示词审核的对话模型提供商；留空时使用当前会话模型。",
             "type": "string",
             "default": "",
             "_special": "select_provider"
@@ -1409,8 +1390,8 @@
             "default": false
           },
           "ai_provider_id": {
-            "description": "AI 审核 Provider",
-            "hint": "选择用于审核的对话模型 Provider；留空时使用当前会话模型。",
+            "description": "AI 审核模型",
+            "hint": "选择用于图片审核的对话模型提供商；留空时使用当前会话模型。",
             "type": "string",
             "default": "",
             "_special": "select_provider"
@@ -1489,6 +1470,41 @@
             }
           }
         }
+      }
+    }
+  },
+  "generation_task_history": {
+    "description": "任务持久化",
+    "hint": "配置生图任务历史是否持久化，以及历史记录的保留条数和保留天数。",
+    "type": "object",
+    "items": {
+      "enable_generation_task_history": {
+        "description": "持久化生图任务历史",
+        "hint": "开启后会将任务状态、会话标识、提示词摘要、结果路径和错误摘要保存到插件数据目录；关闭后仅保留运行时内存任务。",
+        "type": "bool",
+        "default": true
+      },
+      "generation_task_history_limit": {
+        "description": "生图任务历史保留条数",
+        "hint": "最多保留的生图任务记录数量；活跃任务不会因历史裁剪被删除。",
+        "type": "int",
+        "slider": {
+          "min": 100,
+          "max": 5000,
+          "step": 50
+        },
+        "default": 1000
+      },
+      "generation_task_history_retention_days": {
+        "description": "生图任务历史保留天数",
+        "hint": "已结束任务超过该天数后会被清理；设置为 0 表示不按时间清理，仅按条数限制。",
+        "type": "int",
+        "slider": {
+          "min": 0,
+          "max": 365,
+          "step": 1
+        },
+        "default": 0
       }
     }
   }
