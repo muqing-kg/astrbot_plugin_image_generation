@@ -107,7 +107,10 @@ class VolcengineArkAdapter(BaseImageAdapter):
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
                     self._log_api_error(request, resp.status, duration, error_text)
-                    return None, f"API 错误 ({resp.status})"
+                    return None, self._format_api_error_message(
+                        resp.status,
+                        error_text,
+                    )
 
                 data = await self._read_response_json(resp, request.task_id)
                 return await self._extract_images(data, request.task_id)

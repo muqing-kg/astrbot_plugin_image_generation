@@ -20,6 +20,7 @@ from astrbot.core.tools.message_tools import SendMessageToUserTool
 from astrbot.core.utils.history_saver import persist_agent_history
 
 from ..config.manager import ConfigManager
+from ..formatting.result import format_generation_failure_message
 from ..tasks.models import GenerationTaskRecord, GenerationTaskStatus
 from ..shared.logging import log_prefix, safe_log_text
 from ..tasks.manager import TaskManager
@@ -138,11 +139,11 @@ class LLMResultHandler:
         lines.extend(
             [
                 "",
-                "给 AI 的处理要求:",
-                "- 这只是任务提交成功，不代表图片已经生成完成。",
-                "- 任务完成后，插件会自动把成功图片或失败原因返回给你继续处理。",
-                "- 建议不要给用户发送任何消息;如果一定要发送的话，在符合上下文和人设的情况下告知用户进行等待。",
-                "- 不要重复调用 generate_image，也不要声称已经看到最终图片。",
+                "内部指引:",
+                "- 当前仅表示任务已提交，不能向用户声明图片已完成。",
+                "- 等待插件唤醒并提供最终结果后，再通过 send_message_to_user 发送图片或失败原因。",
+                "- 最终结果到达前，除非上下文确有需要，否则不要主动发送额外消息。",
+                "- 不要重复调用 generate_image。",
             ]
         )
         return "\n".join(lines)
@@ -197,7 +198,7 @@ class LLMResultHandler:
         """Build a direct user-facing fallback message when AI handling fails."""
         chain = MessageChain()
         if record.error:
-            chain.message(f"❌ 生成失败: {record.error}")
+            chain.message(format_generation_failure_message(record.error))
             return chain
 
         if not record.result_paths:

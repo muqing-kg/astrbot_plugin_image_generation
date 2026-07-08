@@ -634,6 +634,11 @@ class ImageGenerationPlugin(Star):
                 include_finished=True,
             )
             if not record:
+                if task_id.isdigit():
+                    yield event.plain_result(
+                        "❌ 未找到编号对应的进行中任务；已结束任务请使用完整任务ID查看"
+                    )
+                    return
                 yield event.plain_result(f"❌ 任务不存在或已被清理: {task_id}")
                 return
             if record.unified_msg_origin != user_id and not self.is_usage_limit_admin(
@@ -665,7 +670,8 @@ class ImageGenerationPlugin(Star):
             )
             if active_records:
                 yield event.plain_result(
-                    "❌ 请提供要取消的任务ID\n" + self.format_task_list(active_records)
+                    "❌ 请提供要取消的编号或任务ID\n"
+                    + self.format_task_list(active_records)
                 )
             else:
                 yield event.plain_result("📭 当前没有可取消的生图任务")
@@ -673,7 +679,9 @@ class ImageGenerationPlugin(Star):
 
         record = self.resolve_active_task_reference(event.unified_msg_origin, task_id)
         if not record:
-            yield event.plain_result(f"❌ 正在进行的任务不存在: {task_id}")
+            yield event.plain_result(
+                f"❌ 未找到对应的进行中任务，请检查编号或任务ID: {task_id}"
+            )
             return
 
         _, message = self.task_manager.cancel_generation_task(
@@ -872,10 +880,16 @@ class ImageGenerationPlugin(Star):
             return
 
         models = self.config_manager.adapter_config.available_models or []
+        current_model_full = f"{self.config_manager.adapter_config.name}/{self.config_manager.adapter_config.model}"
 
         if not model_index:
+            if not models:
+                yield event.plain_result(
+                    f"📋 当前没有配置可用模型\n\n当前使用: {current_model_full}"
+                )
+                return
+
             lines = ["📋 可用模型列表:"]
-            current_model_full = f"{self.config_manager.adapter_config.name}/{self.config_manager.adapter_config.model}"
             for idx, model in enumerate(models, 1):
                 marker = " ✓" if model == current_model_full else ""
                 lines.append(f"{idx}. {model}{marker}")
@@ -949,11 +963,21 @@ class ImageGenerationPlugin(Star):
             return
 
         if cmd_text.startswith("添加 "):
-            parts = cmd_text[3:].split(":", 1)
-            if len(parts) == 2:
-                name, prompt = parts
-                self.config_manager.save_preset(name.strip(), prompt.strip())
-                yield event.plain_result(f"✅ 预设已添加: {name.strip()}")
+            preset_text = cmd_text[3:].strip()
+            delimiter_positions = [
+                (index, delimiter)
+                for index, delimiter in (
+                    (preset_text.find(":"), ":"),
+                    (preset_text.find("："), "："),
+                )
+                if index >= 0
+            ]
+            if delimiter_positions:
+                split_index, _ = min(delimiter_positions, key=lambda item: item[0])
+                name = preset_text[:split_index].strip()
+                prompt = preset_text[split_index + 1 :].strip()
+                self.config_manager.save_preset(name, prompt)
+                yield event.plain_result(f"✅ 预设已添加: {name}")
             else:
                 yield event.plain_result("❌ 格式错误: /预设 添加 名称:内容")
         elif cmd_text.startswith("删除 "):

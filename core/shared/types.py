@@ -53,6 +53,7 @@ class AdapterConfig:
     timeout: int = 180
     max_retry_attempts: int = 3
     debug_request_logging: bool = False
+    show_user_error_details: bool = False
     non_retryable_status_codes: list[int] = field(default_factory=list)
     non_retryable_error_keywords: list[str] = field(default_factory=list)
     safety_settings: str | None = None

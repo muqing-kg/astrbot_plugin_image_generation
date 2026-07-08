@@ -22,6 +22,7 @@ from ..shared.logging import (
     mask_sensitive,
     safe_log_error_body,
     safe_log_text,
+    safe_user_error_detail,
     safe_log_url,
 )
 from ..shared.types import (
@@ -54,6 +55,7 @@ class BaseImageAdapter(abc.ABC):
         self.download_timeout = DEFAULT_DOWNLOAD_TIMEOUT
         self.max_retry_attempts = max(1, config.max_retry_attempts)
         self.debug_request_logging = config.debug_request_logging
+        self.show_user_error_details = config.show_user_error_details
         self.non_retryable_status_codes = set(config.non_retryable_status_codes)
         self.non_retryable_error_keywords = [
             keyword.lower()
@@ -241,6 +243,27 @@ class BaseImageAdapter(abc.ABC):
                 错误=safe_log_error_body(exc),
             )
         )
+
+    def _format_api_error_message(
+        self,
+        status: int,
+        error_body: object | None = None,
+    ) -> str:
+        """Format user-facing API error with optional sanitized details.
+
+        Args:
+            status: HTTP response status code.
+            error_body: Raw provider error body to summarize when enabled.
+
+        Returns:
+            A concise user-facing API error message.
+        """
+        message = f"API 错误 ({status})"
+        if self.show_user_error_details and error_body:
+            detail = safe_user_error_detail(error_body, 600)
+            if detail:
+                return f"{message}: {detail}"
+        return message
 
     def _get_timeout(self) -> aiohttp.ClientTimeout:
         """获取统一的请求超时配置。"""

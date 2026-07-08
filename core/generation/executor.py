@@ -13,7 +13,10 @@ from ..adapters.generator import ImageGenerator
 from .image_processor import ImageProcessor
 from ..shared.logging import log_prefix, safe_log_error_body, safe_log_text
 from .reference_collector import ensure_image_data
-from ..formatting.result import build_result_info_message
+from ..formatting.result import (
+    build_result_info_message,
+    format_generation_failure_message,
+)
 from ..audit.safety import SafetyAuditor
 from ..tasks.ids import new_task_id
 from ..tasks.manager import TaskManager
@@ -278,7 +281,7 @@ class GenerationExecutor:
                 return
             await self.context.send_message(
                 unified_msg_origin,
-                MessageChain().message(f"❌ 生成失败: {error}"),
+                MessageChain().message(format_generation_failure_message(error)),
             )
             return
 

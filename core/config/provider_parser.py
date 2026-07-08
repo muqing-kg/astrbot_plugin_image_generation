@@ -102,6 +102,9 @@ class ConfigProviderParserMixin:
             debug_request_logging=self._get_bool(
                 gen_cfg, "debug_request_logging", False
             ),
+            show_user_error_details=self._get_bool(
+                gen_cfg, "show_user_error_details", False
+            ),
             non_retryable_status_codes=self._parse_int_list(
                 gen_cfg.get(
                     "non_retryable_status_codes",
