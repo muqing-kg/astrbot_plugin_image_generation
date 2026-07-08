@@ -58,7 +58,6 @@ class SiliconFlowAdapter(BaseImageAdapter):
         start_time = time.time()
         payload = self._build_payload(request)
         session = self._get_session()
-        prefix = self._get_log_prefix(request.task_id)
 
         base = self.base_url or self.DEFAULT_BASE_URL
         url = f"{base.rstrip('/')}/v1/images/generations"
@@ -67,9 +66,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
             "Content-Type": "application/json",
         }
 
-        logger.debug(
-            f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}"
-        )
+        self._log_request_overview(request, url, payload=payload)
         self._log_debug_json("请求", payload, request.task_id)
 
         try:
@@ -81,21 +78,19 @@ class SiliconFlowAdapter(BaseImageAdapter):
                 timeout=self._get_timeout(),
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
 
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data, request.task_id)
         except Exception as exc:  # noqa: BLE001
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {exc}")
-            return None, str(exc)
+            self._log_request_exception(request, duration, exc)
+            return None, safe_log_error_body(exc)
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
         """构建 SiliconFlow 图片生成请求。"""
@@ -179,7 +174,9 @@ class SiliconFlowAdapter(BaseImageAdapter):
                 try:
                     images.append(base64.b64decode(str(b64_json)))
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning(f"{prefix} Base64 解码失败: {exc}")
+                    logger.warning(
+                        f"{prefix} Base64 解码失败: {safe_log_error_body(exc)}"
+                    )
                 continue
 
             url = item.get("url")
@@ -216,7 +213,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
                     f"{prefix} 下载图像失败 ({resp.status}): {safe_log_url(url)}"
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"{prefix} 下载图像异常: {exc}")
+            logger.error(f"{prefix} 下载图像异常: {safe_log_error_body(exc)}")
         return None
 
     def _decode_data_url(self, url: str, task_id: str | None = None) -> bytes | None:
@@ -228,7 +225,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
             return base64.b64decode(data_part)
         except Exception as exc:  # noqa: BLE001
             prefix = self._get_log_prefix(task_id)
-            logger.warning(f"{prefix} Data URL 解码失败: {exc}")
+            logger.warning(f"{prefix} Data URL 解码失败: {safe_log_error_body(exc)}")
             return None
 
     def _is_qwen_image_model(self) -> bool:

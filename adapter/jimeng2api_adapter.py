@@ -62,6 +62,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     payload["ratio"] = request.aspect_ratio
                 if request.resolution and request.resolution != UNSPECIFIED_OPTION:
                     payload["resolution"] = request.resolution.lower()
+                self._log_request_overview(request, url, payload=payload)
                 self._log_debug_json("请求", payload, request.task_id)
 
                 async with session.post(
@@ -72,19 +73,24 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     timeout=self._get_timeout(),
                 ) as resp:
                     duration = time.time() - start_time
+                    self._log_response_status(request, resp.status, duration)
                     if resp.status != 200:
                         error_text = await resp.text()
                         self._log_debug_json_text("响应", error_text, request.task_id)
-                        logger.error(
-                            f"{prefix} Compositions 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
+                        self._log_api_error(
+                            request,
+                            resp.status,
+                            duration,
+                            error_text,
+                            label="Compositions 错误",
                         )
                         return None, f"API 错误 ({resp.status})"
 
                     data_json = await self._read_response_json(resp, request.task_id)
-                    logger.debug(
-                        f"{prefix} Compositions 响应: {safe_log_mapping(data_json)}"
-                    )
-                    logger.debug(f"{prefix} Compositions 成功 (耗时: {duration:.2f}s)")
+                    if self.debug_request_logging:
+                        logger.debug(
+                            f"{prefix} Compositions 响应摘要: {safe_log_mapping(data_json)}"
+                        )
                     return await self._extract_images(data_json, request.task_id)
             else:
                 # 文生图
@@ -100,6 +106,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     payload["ratio"] = request.aspect_ratio
                 if request.resolution and request.resolution != UNSPECIFIED_OPTION:
                     payload["resolution"] = request.resolution.lower()
+                self._log_request_overview(request, url, payload=payload)
                 self._log_debug_json("请求", payload, request.task_id)
 
                 async with session.post(
@@ -110,25 +117,30 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                     timeout=self._get_timeout(),
                 ) as resp:
                     duration = time.time() - start_time
+                    self._log_response_status(request, resp.status, duration)
                     if resp.status != 200:
                         error_text = await resp.text()
                         self._log_debug_json_text("响应", error_text, request.task_id)
-                        logger.error(
-                            f"{prefix} Generations 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
+                        self._log_api_error(
+                            request,
+                            resp.status,
+                            duration,
+                            error_text,
+                            label="Generations 错误",
                         )
                         return None, f"API 错误 ({resp.status})"
 
                     data_json = await self._read_response_json(resp, request.task_id)
-                    logger.debug(
-                        f"{prefix} Generations 响应: {safe_log_mapping(data_json)}"
-                    )
-                    logger.debug(f"{prefix} Generations 成功 (耗时: {duration:.2f}s)")
+                    if self.debug_request_logging:
+                        logger.debug(
+                            f"{prefix} Generations 响应摘要: {safe_log_mapping(data_json)}"
+                        )
                     return await self._extract_images(data_json, request.task_id)
 
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
-            return None, str(e)
+            self._log_request_exception(request, duration, e)
+            return None, safe_log_error_body(e)
 
     async def _extract_images(
         self, response: dict, task_id: str | None = None
@@ -197,8 +209,8 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                         )
             except Exception as e:
                 logger.error(
-                    f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取请求异常: {e}"
+                    f"{self._get_log_prefix()} API Key (索引 {i}) 积分领取请求异常: {safe_log_error_body(e)}"
                 )
-                results[f"key_{i}"] = {"error": str(e)}
+                results[f"key_{i}"] = {"error": safe_log_error_body(e)}
 
         return results

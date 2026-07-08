@@ -22,7 +22,12 @@ from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_workspaces_path
 from astrbot.core.utils.io import download_image_by_url
 
-from ..shared.logging import log_prefix, mask_sensitive, safe_log_url
+from ..shared.logging import (
+    log_prefix,
+    mask_sensitive,
+    safe_log_error_body,
+    safe_log_url,
+)
 from ..shared.types import ImageData
 
 if TYPE_CHECKING:
@@ -266,7 +271,9 @@ class ImageProcessor:
                 log_source=url,
             )
         except Exception as exc:
-            logger.error(f"{LOG} 获取图片失败: {safe_log_url(url)} ({exc})")
+            logger.error(
+                f"{LOG} 获取图片失败: {safe_log_url(url)} ({safe_log_error_body(exc)})"
+            )
         return None
 
     def validate_image_data(
@@ -329,7 +336,9 @@ class ImageProcessor:
                 if self.validate_image_data(data, log_source=url):
                     return data
         except Exception as e:
-            logger.debug(f"{LOG} 获取头像失败 (user_id={mask_sensitive(user_id)}): {e}")
+            logger.debug(
+                f"{LOG} 获取头像失败 (user_id={mask_sensitive(user_id)}): {safe_log_error_body(e)}"
+            )
         return None
 
     def _message_body_leading_component(self, event: AstrMessageEvent):
@@ -440,7 +449,10 @@ class ImageProcessor:
                                 ImageData(data=avatar_data, mime_type="image/jpeg")
                             )
             except Exception as e:
-                logger.error(f"{LOG} 提取消息组件图片失败: {e}", exc_info=True)
+                logger.error(
+                    f"{LOG} 提取消息组件图片失败: {safe_log_error_body(e)}",
+                    exc_info=True,
+                )
                 continue
         return images_data
 
@@ -455,5 +467,7 @@ class ImageProcessor:
                 f.write(img_bytes)
             return file_path
         except Exception as exc:
-            logger.error(f"{LOG} 保存图片失败: {exc}", exc_info=True)
+            logger.error(
+                f"{LOG} 保存图片失败: {safe_log_error_body(exc)}", exc_info=True
+            )
             return None

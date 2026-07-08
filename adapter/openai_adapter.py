@@ -71,7 +71,14 @@ class OpenAIAdapter(BaseImageAdapter):
             headers["Content-Type"] = "application/json"
             payload = self._build_payload(request)
             kwargs = {"json": payload}
+            self._log_request_overview(request, url, payload=payload)
             self._log_debug_json("请求", payload, request.task_id)
+        if use_edit:
+            self._log_request_overview(
+                request,
+                url,
+                form_fields=["model", "prompt", "n", "size", "image[]"],
+            )
 
         try:
             async with session.post(
@@ -82,20 +89,18 @@ class OpenAIAdapter(BaseImageAdapter):
                 **kwargs,
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data)
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
-            return None, str(e)
+            self._log_request_exception(request, duration, e)
+            return None, safe_log_error_body(e)
 
     def _build_payload(self, request: GenerationRequest) -> dict:
         """构建请求载荷。"""

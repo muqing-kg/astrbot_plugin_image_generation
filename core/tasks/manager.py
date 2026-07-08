@@ -33,6 +33,7 @@ from .runtime import (
     TaskSchedulerMixin,
 )
 from ..shared.logging import (
+    format_log_event,
     format_optional,
     format_seconds,
     log_prefix,
@@ -63,6 +64,18 @@ def _task_creation_summary(record: GenerationTaskRecord) -> str:
         f"{record.preset_label}={format_optional(record.preset)}，"
         f"宽高比={safe_log_text(record.aspect_ratio)}，"
         f"分辨率={safe_log_text(record.resolution)}"
+    )
+
+
+def _task_failure_summary(record: GenerationTaskRecord) -> str:
+    """Return a compact failure summary for generation task logs."""
+    return (
+        f"来源={safe_log_text(record.source)}，"
+        f"用户={mask_sensitive(record.unified_msg_origin)}，"
+        f"数量={record.requested_count}张，"
+        f"结果={record.result_count}张，"
+        f"{_task_elapsed(record)}，"
+        f"错误={record.error}"
     )
 
 
@@ -129,8 +142,23 @@ class TaskManager(
             stable error code and user-facing message.
         """
         if not self._accepting_generation_tasks or self._generation_shutdown:
+            logger.debug(
+                f"{LOG} "
+                + format_log_event(
+                    "任务提交拒绝",
+                    原因="任务队列未开放或正在关闭",
+                )
+            )
             return "task_manager_closed", "生图任务队列暂不可用，请稍后再试"
         if self._queued_generation_task_count() >= self._max_queued_generation_tasks:
+            logger.warning(
+                f"{LOG} "
+                + format_log_event(
+                    "任务提交拒绝",
+                    原因="队列已满",
+                    排队=f"{self._queued_generation_task_count()}/{self._max_queued_generation_tasks}",
+                )
+            )
             return "queue_full", "生图任务队列已满，请稍后再试"
         return None
 
@@ -162,6 +190,10 @@ class TaskManager(
             code, message = rejection
             raise GenerationTaskCreationError(code, message)
         if task_id in self._generation_tasks:
+            logger.warning(
+                f"{log_prefix('Task', task_id)} "
+                + format_log_event("任务提交拒绝", 原因="任务 ID 冲突")
+            )
             raise GenerationTaskCreationError(
                 "task_id_conflict",
                 f"生图任务 ID 冲突: {task_id}",
@@ -198,8 +230,8 @@ class TaskManager(
         )
         self._save_generation_tasks()
         logger.info(
-            f"{log_prefix('Task', task_id)} 已提交生图任务: "
-            f"{_task_creation_summary(record)}"
+            f"{log_prefix('Task', task_id)} "
+            + format_log_event("任务提交", 摘要=_task_creation_summary(record))
         )
         logger.debug(
             f"{log_prefix('Task', task_id)} 生图任务提示词摘要: "
@@ -502,9 +534,13 @@ class TaskManager(
         if not record:
             return
         logger.info(
-            f"{log_prefix('Task', task_id)} 生图任务完成: "
-            f"来源={safe_log_text(record.source)}，{_task_elapsed(record)}，"
-            f"结果={record.result_count}张"
+            f"{log_prefix('Task', task_id)} "
+            + format_log_event(
+                "任务完成",
+                来源=safe_log_text(record.source),
+                用时=_task_elapsed(record),
+                结果=f"{record.result_count}张",
+            )
         )
         self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)
@@ -520,8 +556,8 @@ class TaskManager(
         if not record:
             return
         logger.warning(
-            f"{log_prefix('Task', task_id)} 生图任务失败: "
-            f"{_task_elapsed(record)}，错误={record.error}"
+            f"{log_prefix('Task', task_id)} "
+            + format_log_event("任务失败", 摘要=_task_failure_summary(record))
         )
         self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)
@@ -538,8 +574,12 @@ class TaskManager(
         if not record:
             return
         logger.info(
-            f"{log_prefix('Task', task_id)} 生图任务已取消: "
-            f"{_task_elapsed(record)}，原因={format_optional(reason)}"
+            f"{log_prefix('Task', task_id)} "
+            + format_log_event(
+                "任务取消",
+                用时=_task_elapsed(record),
+                原因=format_optional(reason),
+            )
         )
         self._save_generation_tasks()
         self._notify_generation_task_terminal(task_id)

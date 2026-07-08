@@ -16,6 +16,7 @@ from .models import (
 )
 from ..tasks.models import GenerationTaskCreationError, GenerationTaskRecord
 from ..shared.logging import (
+    format_log_event,
     log_prefix,
     mask_sensitive,
     safe_log_error_body,
@@ -123,9 +124,14 @@ class ImageGenerationPublicAPI:
                 update_timestamp=False,
             )
             if isinstance(check_result, str):
-                logger.warning(
-                    f"{LOG} 公共接口触发使用限制: {safe_log_text(check_result)} "
-                    f"(用户: {mask_sensitive(scope)})"
+                logger.info(
+                    f"{LOG} "
+                    + format_log_event(
+                        "公共接口使用限制",
+                        调用方=request_source,
+                        用户=mask_sensitive(scope),
+                        原因=safe_log_text(check_result),
+                    )
                 )
                 return self._submit_error(
                     PublicAPIResultCode.RATE_LIMITED,
@@ -158,9 +164,14 @@ class ImageGenerationPublicAPI:
                 requested_count=requested_count,
             )
             if isinstance(check_result, str):
-                logger.warning(
-                    f"{LOG} 公共接口触发使用限制: {safe_log_text(check_result)} "
-                    f"(用户: {mask_sensitive(scope)})"
+                logger.info(
+                    f"{LOG} "
+                    + format_log_event(
+                        "公共接口使用限制",
+                        调用方=request_source,
+                        用户=mask_sensitive(scope),
+                        原因=safe_log_text(check_result),
+                    )
                 )
                 return self._submit_error(
                     PublicAPIResultCode.RATE_LIMITED,
@@ -176,6 +187,7 @@ class ImageGenerationPublicAPI:
                 persona_images=persona_images,
                 task_id=task_id,
                 unified_msg_origin=scope,
+                request_source=request_source,
             )
 
             preset_summary, preset_label = self._format_template_summary(
@@ -199,6 +211,16 @@ class ImageGenerationPublicAPI:
                 auto_send=False,
             )
             task_created = True
+            logger.debug(
+                f"{log_prefix('PublicAPI', task_id)} "
+                + format_log_event(
+                    "公共接口任务提交",
+                    调用方=request_source,
+                    用户=mask_sensitive(scope),
+                    数量=f"{requested_count}张",
+                    参考图=f"{len(references)}张",
+                )
+            )
         except GenerationTaskCreationError as exc:
             # create_generation_task() rolls back quota reservation on creation failure.
             usage_reserved = False
@@ -223,7 +245,12 @@ class ImageGenerationPublicAPI:
                     count=requested_count,
                 )
             logger.error(
-                f"{log_prefix('PublicAPI', task_id)} 公共接口提交前处理失败: {safe_log_error_body(exc, 200)}",
+                f"{log_prefix('PublicAPI', task_id)} "
+                + format_log_event(
+                    "公共接口提交失败",
+                    调用方=request_source,
+                    错误=safe_log_error_body(exc, 200),
+                ),
                 exc_info=True,
             )
             return self._submit_error(
@@ -585,6 +612,7 @@ class ImageGenerationPublicAPI:
         persona_images: list[tuple[str, str]],
         task_id: str,
         unified_msg_origin: str | None = None,
+        request_source: str = DEFAULT_SOURCE,
     ) -> list[ImageData]:
         plugin = self._plugin
         if not plugin.generator or not plugin.generator.adapter:
@@ -595,8 +623,13 @@ class ImageGenerationPublicAPI:
         )
         if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
             if has_references:
-                logger.warning(
-                    f"{log_prefix('PublicAPI', task_id)} 当前适配器不支持参考图，已忽略公共接口参考图参数"
+                logger.debug(
+                    f"{log_prefix('PublicAPI', task_id)} "
+                    + format_log_event(
+                        "公共接口参考图忽略",
+                        调用方=request_source,
+                        原因="当前适配器不支持参考图",
+                    )
                 )
             return []
 
@@ -646,15 +679,15 @@ class ImageGenerationPublicAPI:
                 try:
                     data, _mime = item
                 except (TypeError, ValueError):
-                    logger.warning(f"{LOG} 已忽略格式错误的二进制参考图")
+                    logger.debug(f"{LOG} 已忽略格式错误的二进制参考图")
                     continue
             if isinstance(data, bytearray):
                 data = bytes(data)
             if not isinstance(data, bytes) or not data:
-                logger.warning(f"{LOG} 已忽略空的二进制参考图")
+                logger.debug(f"{LOG} 已忽略空的二进制参考图")
                 continue
             if len(data) > max_size * 1024 * 1024:
-                logger.warning(f"{LOG} 已忽略超过大小限制的二进制参考图 ({max_size}MB)")
+                logger.debug(f"{LOG} 已忽略超过大小限制的二进制参考图 ({max_size}MB)")
                 continue
             image_data = self._plugin.image_processor.validate_image_data(
                 data,

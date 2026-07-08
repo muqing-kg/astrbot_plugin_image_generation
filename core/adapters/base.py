@@ -12,7 +12,18 @@ import aiohttp
 from astrbot.api import logger
 
 from ..shared.constants import DEFAULT_DOWNLOAD_TIMEOUT
-from ..shared.logging import log_prefix, mask_sensitive, safe_log_text
+from ..shared.logging import (
+    format_cn_log_fields,
+    format_log_event,
+    format_seconds,
+    format_sub_request,
+    is_sensitive_log_field,
+    log_prefix,
+    mask_sensitive,
+    safe_log_error_body,
+    safe_log_text,
+    safe_log_url,
+)
 from ..shared.types import (
     AdapterConfig,
     GenerationRequest,
@@ -99,6 +110,138 @@ class BaseImageAdapter(abc.ABC):
         adapter_name = self.__class__.__name__.replace("Adapter", "")
         return log_prefix(adapter_name, task_id)
 
+    def _format_request_context(self, request: GenerationRequest) -> dict[str, str]:
+        """Build reusable context fields for adapter request logs.
+
+        Args:
+            request: Generation request currently sent to the provider.
+
+        Returns:
+            A mapping of optional Chinese log fields.
+        """
+        return {
+            "子请求": format_sub_request(request.batch_index, request.batch_count),
+            "模型": safe_log_text(self.model),
+            "参考图": f"{len(request.images)}张",
+        }
+
+    def _log_request_overview(
+        self,
+        request: GenerationRequest,
+        url: str,
+        *,
+        method: str = "POST",
+        payload: Any = None,
+        form_fields: list[str] | None = None,
+        extra: dict[str, object] | None = None,
+    ) -> None:
+        """Log safe adapter request metadata without dumping payload values.
+
+        Args:
+            request: Generation request currently sent to the provider.
+            url: Provider request URL.
+            method: HTTP method.
+            payload: Optional JSON payload used only for field names.
+            form_fields: Optional form field names.
+            extra: Additional safe metadata fields.
+        """
+        fields: dict[str, object] = {
+            **self._format_request_context(request),
+            "方法": method,
+            "地址": safe_log_url(url),
+        }
+        if not self.debug_request_logging:
+            if isinstance(payload, dict):
+                fields["请求字段"] = list(payload.keys())
+            elif form_fields:
+                fields["表单字段"] = form_fields
+        if extra:
+            fields.update(extra)
+        logger.debug(
+            f"{self._get_log_prefix(request.task_id)} "
+            + format_log_event("适配器请求", **fields)
+        )
+
+    def _log_response_status(
+        self,
+        request: GenerationRequest,
+        status: int,
+        duration: float,
+    ) -> None:
+        """Log safe adapter response status metadata.
+
+        Args:
+            request: Generation request currently sent to the provider.
+            status: HTTP response status code.
+            duration: Request duration in seconds.
+        """
+        logger.debug(
+            f"{self._get_log_prefix(request.task_id)} "
+            + format_log_event(
+                "适配器请求状态",
+                **self._format_request_context(request),
+                状态码=status,
+                耗时=format_seconds(duration),
+            )
+        )
+
+    def _log_api_error(
+        self,
+        request: GenerationRequest,
+        status: int,
+        duration: float,
+        error_body: object,
+        *,
+        label: str = "API 错误",
+    ) -> None:
+        """Log provider API failure with sanitized error body.
+
+        Args:
+            request: Generation request currently sent to the provider.
+            status: HTTP response status code.
+            duration: Request duration in seconds.
+            error_body: Provider error response body or exception.
+            label: Human-readable error label.
+        """
+        logger.error(
+            f"{self._get_log_prefix(request.task_id)} "
+            + format_log_event(
+                "适配器请求失败",
+                类型=label,
+                **self._format_request_context(request),
+                状态码=status,
+                耗时=format_seconds(duration),
+                错误=safe_log_error_body(error_body),
+            )
+        )
+
+    def _log_request_exception(
+        self,
+        request: GenerationRequest,
+        duration: float,
+        exc: object,
+        *,
+        label: str = "请求异常",
+    ) -> None:
+        """Log provider request exception with sanitized error text.
+
+        Args:
+            request: Generation request currently sent to the provider.
+            duration: Request duration in seconds.
+            exc: Exception or error object.
+            label: Human-readable error label.
+        """
+        logger.error(
+            f"{self._get_log_prefix(request.task_id)} "
+            + format_log_event(
+                "适配器请求异常",
+                类型=label,
+                **self._format_request_context(request),
+                耗时=format_seconds(duration),
+                错误=safe_log_error_body(exc),
+            )
+        )
+
     def _get_timeout(self) -> aiohttp.ClientTimeout:
         """获取统一的请求超时配置。"""
         return aiohttp.ClientTimeout(total=self.timeout)
@@ -124,13 +267,18 @@ class BaseImageAdapter(abc.ABC):
         )
         logger.debug(f"{prefix} {label} JSON: {json_text}")
 
-    def _sanitize_debug_json(self, value: Any) -> Any:
+    def _sanitize_debug_json(self, value: Any, field_name: str | None = None) -> Any:
         """保留 JSON 结构，同时截断图片 Base64 和其他超长字符串。"""
+        if field_name and is_sensitive_log_field(field_name):
+            return mask_sensitive(value)
         if isinstance(value, dict):
-            return {key: self._sanitize_debug_json(item) for key, item in value.items()}
+            return {
+                key: self._sanitize_debug_json(item, field_name=str(key))
+                for key, item in value.items()
+            }
         if isinstance(value, list):
             items = [
-                self._sanitize_debug_json(item)
+                self._sanitize_debug_json(item, field_name=field_name)
                 for item in value[:DEBUG_JSON_LIST_LIMIT]
             ]
             if len(value) > DEBUG_JSON_LIST_LIMIT:
@@ -203,9 +351,13 @@ class BaseImageAdapter(abc.ABC):
 
         prefix = self._get_log_prefix(request.task_id)
         logger.debug(
-            f"{prefix} 准备生图请求: 模型={safe_log_text(self.model)}，"
-            f"进度={request.batch_index}/{request.batch_count}，"
-            f"参考图={len(request.images)}张，最大重试={self.max_retry_attempts}次"
+            f"{prefix} 准备生图请求: "
+            + format_cn_log_fields(
+                模型=self.model,
+                子请求=format_sub_request(request.batch_index, request.batch_count),
+                参考图=f"{len(request.images)}张",
+                最大重试=f"{self.max_retry_attempts}次",
+            )
         )
 
         # 预处理检查（子类可重写）
@@ -222,22 +374,35 @@ class BaseImageAdapter(abc.ABC):
                 request.retry_status_callback(attempt + 1, self.max_retry_attempts)
             if attempt:
                 logger.debug(
-                    f"{prefix} 重试生图请求 ({attempt + 1}/{self.max_retry_attempts})"
+                    f"{prefix} 重试生图请求: "
+                    + format_cn_log_fields(
+                        子请求=format_sub_request(
+                            request.batch_index,
+                            request.batch_count,
+                        ),
+                        重试=f"{attempt + 1}/{self.max_retry_attempts}",
+                    )
                 )
 
             images, err = await self._generate_once(request)
             if images is not None:
-                logger.debug(f"{prefix} 生图请求完成: 图片={len(images)}张")
                 return GenerationResult(images=images, error=None)
 
             last_error = err or "生成失败"
-            logger.warning(
+            logger.debug(
                 f"{prefix} 生图请求尝试失败 ({attempt + 1}/{self.max_retry_attempts}): "
                 f"{safe_log_text(last_error, 200)}"
             )
             if not self._is_retryable_error(last_error):
                 logger.warning(
-                    f"{prefix} 生图请求错误不可重试，停止重试: {safe_log_text(last_error, 200)}"
+                    f"{prefix} 生图请求错误不可重试，停止重试: "
+                    + format_cn_log_fields(
+                        子请求=format_sub_request(
+                            request.batch_index,
+                            request.batch_count,
+                        ),
+                        错误=safe_log_error_body(last_error, 200),
+                    )
                 )
                 return GenerationResult(images=None, error=last_error)
             if attempt < self.max_retry_attempts - 1:
@@ -248,7 +413,14 @@ class BaseImageAdapter(abc.ABC):
                         min(2 ** ((attempt + 1) // len(self.api_keys)), 10)
                     )
 
-        logger.error(f"{prefix} 生图请求全部重试失败: {safe_log_text(last_error, 200)}")
+        logger.warning(
+            f"{prefix} 生图请求全部重试失败: "
+            + format_cn_log_fields(
+                子请求=format_sub_request(request.batch_index, request.batch_count),
+                重试=f"{self.max_retry_attempts}/{self.max_retry_attempts}",
+                错误=safe_log_error_body(last_error, 200),
+            )
+        )
         return GenerationResult(images=None, error=f"重试失败: {last_error}")
 
     def _is_retryable_error(self, error: str) -> bool:

@@ -83,7 +83,6 @@ class VolcengineArkAdapter(BaseImageAdapter):
         start_time = time.time()
         payload = self._build_payload(request)
         session = self._get_session()
-        prefix = self._get_log_prefix(request.task_id)
 
         headers = {
             "Authorization": f"Bearer {self._get_current_api_key()}",
@@ -91,9 +90,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
         }
         url = self._endpoint_url()
 
-        logger.debug(
-            f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}"
-        )
+        self._log_request_overview(request, url, payload=payload)
         self._log_debug_json("请求", payload, request.task_id)
 
         try:
@@ -105,21 +102,19 @@ class VolcengineArkAdapter(BaseImageAdapter):
                 timeout=self._get_timeout(),
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
 
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data, request.task_id)
         except Exception as exc:  # noqa: BLE001
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {exc}")
-            return None, str(exc)
+            self._log_request_exception(request, duration, exc)
+            return None, safe_log_error_body(exc)
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
         """构建火山方舟图片生成请求。"""
@@ -261,7 +256,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
                     images.append(base64.b64decode(str(b64_json)))
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        f"{self._get_log_prefix(task_id)} Base64 解码失败: {exc}"
+                        f"{self._get_log_prefix(task_id)} Base64 解码失败: {safe_log_error_body(exc)}"
                     )
                 continue
 
@@ -301,7 +296,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
                     f"{prefix} 下载图像失败 ({resp.status}): {safe_log_url(url)}"
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"{prefix} 下载图像异常: {exc}")
+            logger.error(f"{prefix} 下载图像异常: {safe_log_error_body(exc)}")
         return None
 
     def _coerce_int(

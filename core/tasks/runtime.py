@@ -15,7 +15,13 @@ from .models import (
     GenerationTaskStatus,
     TERMINAL_GENERATION_STATUSES,
 )
-from ..shared.logging import format_seconds, log_prefix, safe_log_text
+from ..shared.logging import (
+    format_log_event,
+    format_seconds,
+    log_prefix,
+    safe_log_error_body,
+    safe_log_text,
+)
 
 LOG = log_prefix("TaskManager")
 GENERATION_TERMINAL_CALLBACK_TIMEOUT_SECONDS = 10.0
@@ -143,7 +149,6 @@ class TaskSchedulerMixin:
             return
 
         if not self._startup_tasks:
-            logger.debug(f"{LOG} 没有注册的启动任务")
             self._startup_completed = True
             return
 
@@ -162,7 +167,6 @@ class TaskSchedulerMixin:
                 )
 
         self._startup_completed = True
-        logger.debug(f"{LOG} 所有启动任务执行完毕")
 
     def start_daily_task(
         self,
@@ -340,6 +344,16 @@ class GenerationQueueRunnerMixin:
 
         live_workers = {task for task in self._generation_workers if not task.done()}
         self._generation_workers = live_workers
+        current_count = len(self._generation_workers)
+        if current_count != target_count:
+            logger.debug(
+                f"{LOG} "
+                + format_log_event(
+                    "worker数量调整",
+                    当前=current_count,
+                    目标=target_count,
+                )
+            )
         while len(self._generation_workers) < target_count:
             self._generation_worker_sequence += 1
             worker_index = self._generation_worker_sequence
@@ -356,7 +370,6 @@ class GenerationQueueRunnerMixin:
 
     async def _generation_worker_loop(self, worker_index: int) -> None:
         """Run queued generation tasks one at a time."""
-        logger.debug(f"{LOG} 生图任务 worker {worker_index} 已启动")
         try:
             while True:
                 queue_item = await self._generation_queue.get()
@@ -376,12 +389,10 @@ class GenerationQueueRunnerMixin:
             raise
         except Exception as exc:
             logger.error(
-                f"{LOG} 生图任务 worker {worker_index} 异常退出: {exc}",
+                f"{LOG} 生图任务 worker {worker_index} 异常退出: {safe_log_error_body(exc)}",
                 exc_info=True,
             )
             raise
-        finally:
-            logger.debug(f"{LOG} 生图任务 worker {worker_index} 已退出")
 
     def _on_generation_worker_done(self, task: asyncio.Task) -> None:
         """Cleanup a generation worker and log unexpected failures."""
@@ -394,7 +405,7 @@ class GenerationQueueRunnerMixin:
             return
         if exc:
             logger.error(
-                f"{LOG} 生图任务 worker 异常结束: {_task_name(task.get_name())}: {exc}",
+                f"{LOG} 生图任务 worker 异常结束: {_task_name(task.get_name())}: {safe_log_error_body(exc)}",
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
 
@@ -432,7 +443,7 @@ class GenerationQueueRunnerMixin:
                 f"任务创建执行协程失败: {exc}",
             )
             logger.error(
-                f"{log_prefix('Task', queue_item.task_id)} 生图任务创建执行协程失败: {exc}",
+                f"{log_prefix('Task', queue_item.task_id)} 生图任务创建执行协程失败: {safe_log_error_body(exc)}",
                 exc_info=True,
             )
             return
@@ -468,7 +479,7 @@ class GenerationQueueRunnerMixin:
         except Exception as exc:
             self.mark_generation_task_failed(task_id, f"任务执行异常: {exc}")
             logger.error(
-                f"{log_prefix('Task', task_id)} 生图任务执行异常: {exc}",
+                f"{log_prefix('Task', task_id)} 生图任务执行异常: {safe_log_error_body(exc)}",
                 exc_info=True,
             )
 
