@@ -33,7 +33,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
         """执行单次生图请求。"""
         payload = self._build_payload(request)
         session = self._get_session()
-        response = await self._make_request(session, payload, request.task_id)
+        response = await self._make_request(session, payload, request)
         if response is None:
             return None, "API 请求失败"
         if response_error := response.get("error"):
@@ -142,16 +142,19 @@ class OpenAIChatAdapter(BaseImageAdapter):
         self,
         session: aiohttp.ClientSession,
         payload: dict,
-        task_id: str | None,
+        request: GenerationRequest,
     ) -> dict | None:
         """发送 API 请求。"""
         start_time = time.time()
         url = self._build_chat_completions_url()
         api_key = self._get_current_api_key()
-        masked_key = self._get_masked_api_key()
-        prefix = self._get_log_prefix(task_id)
-        logger.debug(f"{prefix} 请求 -> {safe_log_url(url)}, key={masked_key}")
-        self._log_debug_json("请求", payload, task_id)
+        self._log_request_overview(
+            request,
+            url,
+            payload=payload,
+            extra={"API Key": "已配置" if api_key else "未配置"},
+        )
+        self._log_debug_json("请求", payload, request.task_id)
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -167,20 +170,16 @@ class OpenAIChatAdapter(BaseImageAdapter):
                 proxy=self.proxy,
             ) as response:
                 duration = time.time() - start_time
-                logger.debug(
-                    f"{prefix} 状态 -> {response.status} (耗时: {duration:.2f}s)"
-                )
+                self._log_response_status(request, response.status, duration)
                 if response.status != 200:
                     error_text = await response.text()
-                    self._log_debug_json_text("响应", error_text, task_id)
-                    logger.error(
-                        f"{prefix} 错误 {response.status} (耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_debug_json_text("响应", error_text, request.task_id)
+                    self._log_api_error(request, response.status, duration, error_text)
                     return {"error": {"message": f"API 错误 ({response.status})"}}
-                return await self._read_response_json(response, task_id)
+                return await self._read_response_json(response, request.task_id)
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
+            self._log_request_exception(request, duration, e)
             return None
 
     def _build_chat_completions_url(self) -> str:
@@ -208,7 +207,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
                     f"{prefix} 下载图像失败: {response.status} - {safe_log_url(url)}"
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"{prefix} 下载图像出错: {exc}")
+            logger.error(f"{prefix} 下载图像出错: {safe_log_error_body(exc)}")
         return None
 
     async def _extract_images(
@@ -227,7 +226,9 @@ class OpenAIChatAdapter(BaseImageAdapter):
                     try:
                         images.append(base64.b64decode(b64))
                     except Exception as e:
-                        logger.warning(f"{prefix} Base64 解码失败 (b64_json): {e}")
+                        logger.warning(
+                            f"{prefix} Base64 解码失败 (b64_json): {safe_log_error_body(e)}"
+                        )
                 elif url := item.get("url"):
                     if url.startswith("http"):
                         if content := await self._download_image_from_url(url, task_id):
@@ -264,7 +265,9 @@ class OpenAIChatAdapter(BaseImageAdapter):
                     try:
                         images.append(base64.b64decode(b64_str))
                     except Exception as e:
-                        logger.warning(f"{prefix} Base64 解码失败 (inline): {e}")
+                        logger.warning(
+                            f"{prefix} Base64 解码失败 (inline): {safe_log_error_body(e)}"
+                        )
 
             elif isinstance(content, list):
                 for part in content:
@@ -311,5 +314,5 @@ class OpenAIChatAdapter(BaseImageAdapter):
                 return base64.b64decode(data_part)
             except Exception as exc:  # noqa: BLE001
                 prefix = self._get_log_prefix(task_id)
-                logger.error(f"{prefix} Base64 解码失败: {exc}")
+                logger.warning(f"{prefix} Base64 解码失败: {safe_log_error_body(exc)}")
         return None

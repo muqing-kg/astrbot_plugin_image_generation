@@ -283,7 +283,8 @@ class GenerationExecutor:
             return
 
         logger.debug(
-            f"{task_log} 生成完成，耗时: {duration:.2f}s, 图片数量: {len(generated_file_paths)}/{image_count}"
+            f"{task_log} 生成请求汇总: 耗时={duration:.2f}秒，"
+            f"结果={len(generated_file_paths)}/{image_count}张，失败={len(errors)}项"
         )
 
         image_allowed, image_reason = await self.safety_auditor.audit_generated_images(
@@ -443,7 +444,9 @@ class GenerationExecutor:
                         task_id=task_id,
                         batch_index=current_index,
                         batch_count=image_count,
-                        retry_status_callback=lambda retry_attempt, max_retry_attempts, current_index=current_index: (
+                        retry_status_callback=lambda retry_attempt,
+                        max_retry_attempts,
+                        current_index=current_index: (
                             self.task_manager.update_generation_task_retry_status(
                                 task_id,
                                 current_index=current_index,
@@ -486,7 +489,7 @@ class GenerationExecutor:
                             status="failed",
                             error=str(exc),
                         )
-                        logger.warning(
+                        logger.debug(
                             f"{task_log} {safe_log_error_body(error_message, 200)}"
                         )
 
@@ -502,7 +505,10 @@ class GenerationExecutor:
                             status="failed",
                             error=result.error,
                         )
-                        logger.warning(
+                        log_failed_item = (
+                            logger.warning if image_count > 1 else logger.debug
+                        )
+                        log_failed_item(
                             f"{task_log} {safe_log_error_body(error_message, 200)}"
                         )
                     elif not result.images:
@@ -514,7 +520,10 @@ class GenerationExecutor:
                             status="failed",
                             error="模型未返回图片",
                         )
-                        logger.warning(f"{task_log} {error_message}")
+                        log_failed_item = (
+                            logger.warning if image_count > 1 else logger.debug
+                        )
+                        log_failed_item(f"{task_log} {error_message}")
                     else:
                         saved_count = 0
                         for img_bytes in result.images:
@@ -536,7 +545,10 @@ class GenerationExecutor:
                                     result_count=saved_count,
                                     error="未能保存图片",
                                 )
-                                logger.warning(f"{task_log} {error_message}")
+                                log_failed_item = (
+                                    logger.warning if image_count > 1 else logger.debug
+                                )
+                                log_failed_item(f"{task_log} {error_message}")
                                 break
                         else:
                             self.task_manager.update_generation_task_item_result(

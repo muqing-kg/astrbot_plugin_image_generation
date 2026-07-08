@@ -208,7 +208,7 @@ async def _start_generation_task(
     is_usage_limit_admin = plugin.is_usage_limit_admin(event)
     if not plugin.has_required_api_key():
         masked_uid = mask_sensitive(event.unified_msg_origin)
-        logger.warning(f"{LOG} 工具调用失败: 未配置 API Key (用户: {masked_uid})")
+        logger.debug(f"{LOG} 工具调用失败: 未配置 API Key (用户: {masked_uid})")
         return "❌ 未配置 API Key，无法生成图片"
 
     check_result = plugin.usage_manager.check_rate_limit(
@@ -220,9 +220,7 @@ async def _start_generation_task(
     if isinstance(check_result, str):
         if check_result:
             masked_uid = mask_sensitive(event.unified_msg_origin)
-            logger.warning(
-                f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})"
-            )
+            logger.info(f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})")
         return check_result
 
     prompt_allowed, prompt_reason = await plugin.safety_auditor.audit_prompt(
@@ -244,9 +242,7 @@ async def _start_generation_task(
     if isinstance(check_result, str):
         if check_result:
             masked_uid = mask_sensitive(event.unified_msg_origin)
-            logger.warning(
-                f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})"
-            )
+            logger.info(f"{LOG} 工具调用触发限制: {check_result} (用户: {masked_uid})")
         return check_result
     usage_reserved = True
     task_created = False

@@ -53,6 +53,31 @@ _SENSITIVE_ASSIGNMENT_RE = re.compile(
 _BEARER_RE = re.compile(r"(?i)\bBearer\s+([A-Za-z0-9._~+\-/=]{8,})")
 _DATA_URL_RE = re.compile(r"data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+")
 _LONG_BASE64_RE = re.compile(r"\b[A-Za-z0-9+/]{120,}={0,2}\b")
+SENSITIVE_LOG_FIELD_NAMES = {
+    "authorization",
+    "api-key",
+    "apikey",
+    "api_key",
+    "access-token",
+    "accesstoken",
+    "access_token",
+    "refresh-token",
+    "refreshtoken",
+    "refresh_token",
+    "token",
+    "secret",
+    "password",
+    "x-goog-api-key",
+}
+
+
+def is_sensitive_log_field(name: object) -> bool:
+    """Return whether a field name should always be masked in debug logs."""
+    normalized = str(name or "").strip().lower()
+    if normalized in SENSITIVE_LOG_FIELD_NAMES:
+        return True
+    normalized = normalized.replace("_", "-")
+    return normalized in SENSITIVE_LOG_FIELD_NAMES
 
 
 def safe_log_error_body(value: object, limit: int = 200) -> str:
@@ -129,6 +154,13 @@ def format_seconds(value: float | None) -> str:
     return f"{max(0.0, value):.2f}秒"
 
 
+def format_sub_request(index: int | None, count: int | None) -> str:
+    """Format a generation sub-request index for task logs."""
+    if not index or not count or count <= 1:
+        return ""
+    return f"子请求={max(1, index)}/{max(1, count)}"
+
+
 def format_optional(value: object, empty: str = "无", limit: int = 120) -> str:
     """Format optional values for readable Chinese logs."""
     text = safe_log_text(value, limit=limit)
@@ -153,3 +185,11 @@ def format_cn_log_fields(**fields: object) -> str:
             continue
         parts.append(f"{key}={safe_log_text(value, 160)}")
     return "，".join(parts)
+
+
+def format_log_event(event: str, **fields: object) -> str:
+    """Format a stable event name followed by optional Chinese fields."""
+    details = format_cn_log_fields(**fields)
+    if not details:
+        return f"事件={safe_log_text(event, 80)}"
+    return f"事件={safe_log_text(event, 80)}，{details}"

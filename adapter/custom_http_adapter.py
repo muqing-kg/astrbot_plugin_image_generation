@@ -31,7 +31,6 @@ class CustomHTTPAdapter(BaseImageAdapter):
     ) -> tuple[list[bytes] | None, str | None]:
         """执行单次自定义 HTTP 生图请求。"""
         start_time = time.time()
-        prefix = self._get_log_prefix(request.task_id)
         context = self._build_placeholder_context(request)
 
         url = self._build_url(context)
@@ -75,23 +74,28 @@ class CustomHTTPAdapter(BaseImageAdapter):
         if method not in {"GET", "DELETE"}:
             kwargs["json"] = payload
 
-        logger.debug(
-            f"{prefix} 自定义 HTTP 请求 -> {method} {safe_log_url(url)}，"
-            f"请求体字段={list(payload.keys()) if isinstance(payload, dict) else []}"
+        self._log_request_overview(
+            request,
+            url,
+            method=method,
+            payload=payload,
         )
+        if method not in {"GET", "DELETE"}:
+            self._log_debug_json("请求", payload, request.task_id)
 
         try:
             async with self._get_session().request(method, url, **kwargs) as response:
                 duration = time.time() - start_time
                 body = await response.read()
-                logger.debug(
-                    f"{prefix} 自定义 HTTP 状态 -> {response.status} (耗时: {duration:.2f}s)"
-                )
+                self._log_response_status(request, response.status, duration)
                 if response.status not in self._success_status_codes():
                     error_text = body.decode("utf-8", errors="replace")
-                    logger.error(
-                        f"{prefix} 自定义 HTTP 错误 {response.status} (耗时: {duration:.2f}s): "
-                        f"{safe_log_error_body(error_text)}"
+                    self._log_api_error(
+                        request,
+                        response.status,
+                        duration,
+                        error_text,
+                        label="自定义 HTTP 错误",
                     )
                     return None, f"API 错误 ({response.status})"
 
@@ -112,9 +116,8 @@ class CustomHTTPAdapter(BaseImageAdapter):
                 return None, "响应中未找到图片数据"
         except Exception as exc:  # noqa: BLE001
             duration = time.time() - start_time
-            logger.error(
-                f"{prefix} 自定义 HTTP 请求异常 (耗时: {duration:.2f}s): "
-                f"{safe_log_error_body(exc)}"
+            self._log_request_exception(
+                request, duration, exc, label="自定义 HTTP 请求异常"
             )
             return None, safe_log_error_body(exc)
 
@@ -408,7 +411,9 @@ class CustomHTTPAdapter(BaseImageAdapter):
         try:
             return base64.b64decode(raw + padding)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"{self._get_log_prefix()} Base64 解码失败: {exc}")
+            logger.warning(
+                f"{self._get_log_prefix()} Base64 解码失败: {safe_log_error_body(exc)}"
+            )
             return None
 
     async def _download_image_from_url(
@@ -427,5 +432,5 @@ class CustomHTTPAdapter(BaseImageAdapter):
                     f"{prefix} 下载图像失败: {response.status} - {safe_log_url(url)}"
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"{prefix} 下载图像出错: {exc}")
+            logger.error(f"{prefix} 下载图像出错: {safe_log_error_body(exc)}")
         return None

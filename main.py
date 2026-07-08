@@ -695,7 +695,7 @@ class ImageGenerationPlugin(Star):
         user_input = (event.message_str or "").strip()
         masked_uid = mask_sensitive(user_id)
         logger.debug(
-            f"{LOG} 收到生图指令: 用户={masked_uid}，输入={safe_log_text(user_input)}"
+            f"{LOG} 收到生图指令: 用户={masked_uid}，输入长度={len(user_input)}"
         )
 
         cmd_parts = user_input.split(maxsplit=1)
@@ -708,7 +708,7 @@ class ImageGenerationPlugin(Star):
             return
 
         if not self.generator or not self.generator.adapter:
-            logger.warning(f"{LOG} 生图指令失败: 生成器未初始化，用户={masked_uid}")
+            logger.debug(f"{LOG} 生图指令失败: 生成器未初始化，用户={masked_uid}")
             yield event.plain_result("❌ 生图生成器未初始化")
             return
 
@@ -734,7 +734,7 @@ class ImageGenerationPlugin(Star):
             return
 
         if not self.has_required_api_key():
-            logger.warning(f"{LOG} 生图指令失败: 未配置 API Key，用户={masked_uid}")
+            logger.debug(f"{LOG} 生图指令失败: 未配置 API Key，用户={masked_uid}")
             yield event.plain_result("❌ 未配置 API Key，无法生成图片")
             return
 

@@ -4,8 +4,6 @@ import base64
 import time
 from typing import Any
 
-from astrbot.api import logger
-
 from ..core.adapters.base import BaseImageAdapter
 from ..core.shared.constants import UNSPECIFIED_OPTION
 from ..core.shared.logging import safe_log_error_body
@@ -26,7 +24,6 @@ class GrokAdapter(BaseImageAdapter):
     ) -> tuple[list[bytes] | None, str | None]:
         """执行单次生图请求。"""
         start_time = time.time()
-        prefix = self._get_log_prefix(request.task_id)
 
         payload = self._build_payload(request)
         session = self._get_session()
@@ -46,6 +43,7 @@ class GrokAdapter(BaseImageAdapter):
             "Authorization": f"Bearer {self._get_current_api_key()}",
             "Content-Type": "application/json",
         }
+        self._log_request_overview(request, url, payload=payload)
         self._log_debug_json("请求", payload, request.task_id)
 
         try:
@@ -57,21 +55,19 @@ class GrokAdapter(BaseImageAdapter):
                 timeout=self._get_timeout(),
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
 
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data)
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
-            return None, str(e)
+            self._log_request_exception(request, duration, e)
+            return None, safe_log_error_body(e)
 
     def _build_payload(self, request: GenerationRequest) -> dict:
         """构建请求载荷。"""

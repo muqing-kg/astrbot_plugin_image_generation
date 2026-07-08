@@ -13,7 +13,7 @@ from ..core.shared.constants import (
     GEMINI_SAFETY_CATEGORIES,
     UNSPECIFIED_OPTION,
 )
-from ..core.shared.logging import safe_log_error_body, safe_log_url
+from ..core.shared.logging import safe_log_error_body
 from ..core.shared.types import GenerationRequest, ImageCapability
 
 
@@ -34,7 +34,7 @@ class GeminiAdapter(BaseImageAdapter):
         """执行单次生图请求。"""
         payload = self._build_payload(request)
         session = self._get_session()
-        response = await self._make_request(session, payload, request.task_id)
+        response = await self._make_request(session, payload, request)
         if response is None:
             return None, "API 请求失败"
         if response_error := response.get("error"):
@@ -102,16 +102,19 @@ class GeminiAdapter(BaseImageAdapter):
         self,
         session: aiohttp.ClientSession,
         payload: dict,
-        task_id: str | None,
+        request: GenerationRequest,
     ) -> dict | None:
         """发送 API 请求。"""
         start_time = time.time()
         url = f"{self.base_url or self.DEFAULT_BASE_URL}/v1beta/models/{self.model}:generateContent"
         api_key = self._get_current_api_key()
-        masked_key = self._get_masked_api_key()
-        prefix = self._get_log_prefix(task_id)
-        logger.debug(f"{prefix} 请求 -> {safe_log_url(url)}, key={masked_key}")
-        self._log_debug_json("请求", payload, task_id)
+        self._log_request_overview(
+            request,
+            url,
+            payload=payload,
+            extra={"API Key": "已配置" if api_key else "未配置"},
+        )
+        self._log_debug_json("请求", payload, request.task_id)
 
         headers = {
             "Content-Type": "application/json",
@@ -127,20 +130,16 @@ class GeminiAdapter(BaseImageAdapter):
                 proxy=self.proxy,
             ) as response:
                 duration = time.time() - start_time
-                logger.debug(
-                    f"{prefix} 状态 -> {response.status} (耗时: {duration:.2f}s)"
-                )
+                self._log_response_status(request, response.status, duration)
                 if response.status != 200:
                     error_text = await response.text()
-                    self._log_debug_json_text("响应", error_text, task_id)
-                    logger.error(
-                        f"{prefix} 错误 {response.status} (耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_debug_json_text("响应", error_text, request.task_id)
+                    self._log_api_error(request, response.status, duration, error_text)
                     return {"error": {"message": f"API 错误 ({response.status})"}}
-                return await self._read_response_json(response, task_id)
+                return await self._read_response_json(response, request.task_id)
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
+            self._log_request_exception(request, duration, e)
             return None
 
     def _extract_images(
@@ -150,7 +149,8 @@ class GeminiAdapter(BaseImageAdapter):
         prefix = self._get_log_prefix(task_id)
         try:
             candidates = response.get("candidates", [])
-            logger.debug(f"{prefix} 候选结果: {len(candidates)}")
+            if self.debug_request_logging:
+                logger.debug(f"{prefix} 候选结果: {len(candidates)}")
             if not candidates:
                 return None
 
@@ -163,5 +163,5 @@ class GeminiAdapter(BaseImageAdapter):
 
             return images if images else None
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"{prefix} 解析失败: {exc}")
+            logger.error(f"{prefix} 解析失败: {safe_log_error_body(exc)}")
             return None

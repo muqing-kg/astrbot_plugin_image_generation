@@ -15,7 +15,6 @@ from ..core.shared.constants import (
 from ..core.shared.logging import (
     safe_log_error_body,
     safe_log_mapping,
-    safe_log_url,
 )
 from ..core.shared.types import GenerationRequest, ImageCapability, ImageData
 
@@ -55,7 +54,6 @@ class AgnesAIAdapter(BaseImageAdapter):
     ) -> tuple[list[bytes] | None, str | None]:
         """执行单次生图请求。"""
         start_time = time.time()
-        prefix = self._get_log_prefix(request.task_id)
         payload = self._build_payload(request)
         url = self._endpoint_url()
         headers = {
@@ -63,11 +61,7 @@ class AgnesAIAdapter(BaseImageAdapter):
             "Content-Type": "application/json",
         }
 
-        image_count = len(payload.get("extra_body", {}).get("image", []))
-        logger.debug(
-            f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}, "
-            f"参考图={image_count}张"
-        )
+        self._log_request_overview(request, url, payload=payload)
         self._log_debug_json("请求", payload, request.task_id)
 
         try:
@@ -79,21 +73,19 @@ class AgnesAIAdapter(BaseImageAdapter):
                 timeout=self._get_timeout(),
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
 
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data, request.task_id)
         except Exception as e:  # noqa: BLE001
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
-            return None, str(e)
+            self._log_request_exception(request, duration, e)
+            return None, safe_log_error_body(e)
 
     def _endpoint_url(self) -> str:
         """构建 Agnes AI 图像生成接口地址。"""
@@ -197,7 +189,7 @@ class AgnesAIAdapter(BaseImageAdapter):
                     continue
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
-                        f"{self._get_log_prefix(task_id)} 跳过无效 b64_json 图片数据: {e}"
+                        f"{self._get_log_prefix(task_id)} 跳过无效 b64_json 图片数据: {safe_log_error_body(e)}"
                     )
 
             image_url = item.get("url") or item.get("image_url")
@@ -223,7 +215,9 @@ class AgnesAIAdapter(BaseImageAdapter):
         try:
             return base64.b64decode(data)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"{self._get_log_prefix(task_id)} Base64 解码失败: {exc}")
+            logger.warning(
+                f"{self._get_log_prefix(task_id)} Base64 解码失败: {safe_log_error_body(exc)}"
+            )
             return None
 
     async def _download_image(
@@ -239,5 +233,7 @@ class AgnesAIAdapter(BaseImageAdapter):
                     return await resp.read()
                 logger.warning(f"{prefix} 下载 Agnes AI 图片失败: HTTP {resp.status}")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"{prefix} 下载 Agnes AI 图片异常: {exc}")
+            logger.warning(
+                f"{prefix} 下载 Agnes AI 图片异常: {safe_log_error_body(exc)}"
+            )
         return None

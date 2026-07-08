@@ -95,12 +95,11 @@ def _sync_convert_image_format(
 
         output = BytesIO()
         img.save(output, format="JPEG", quality=95)
-        logger.debug(f"{LOG} 已将图像转换为 JPEG")
         return ImageData(
             data=output.getvalue(), mime_type="image/jpeg", source_url=source_url
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"{LOG} 图像转换失败: {exc}")
+        logger.error(f"{LOG} 图像转换失败: {safe_log_error_body(exc)}")
         return ImageData(data=image_data, mime_type=mime_type, source_url=source_url)
 
 
@@ -112,7 +111,7 @@ async def convert_image_format(
     real_mime = detect_mime_type(image_data)
     if real_mime in SUPPORTED_IMAGE_FORMATS:
         return ImageData(data=image_data, mime_type=real_mime, source_url=source_url)
-    logger.debug(f"{LOG} 正在转换图像格式: {mime_type} -> image/jpeg")
+    logger.debug(f"{LOG} 转换图像格式: {mime_type} -> image/jpeg")
     return await asyncio.to_thread(
         _sync_convert_image_format, image_data, mime_type, source_url
     )

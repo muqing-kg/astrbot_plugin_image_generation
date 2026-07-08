@@ -79,7 +79,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         prefix = self._get_log_prefix(request.task_id)
         mode = "图片编辑" if self._should_use_edits(request) else "文本生成图片"
         logger.debug(
-            f"{prefix} 开始{mode}: 提示词={safe_log_text(request.prompt, 120)}，模型={self._model_name(request)}"
+            f"{prefix} 准备 Gitee AI 请求: 模式={mode}，模型={safe_log_text(self._model_name(request))}"
         )
         return None
 
@@ -89,7 +89,6 @@ class GiteeAIAdapter(BaseImageAdapter):
         """执行单次生图请求。"""
         start_time = time.time()
         session = self._get_session()
-        prefix = self._get_log_prefix(request.task_id)
 
         headers = {
             "Authorization": f"Bearer {self._get_current_api_key()}",
@@ -100,15 +99,13 @@ class GiteeAIAdapter(BaseImageAdapter):
             form, fields = self._build_edit_form(request)
             url = self._endpoint_url("images/edits")
             kwargs: dict[str, Any] = {"data": form}
-            logger.debug(f"{prefix} 请求 URL: {safe_log_url(url)}, Form 字段: {fields}")
+            self._log_request_overview(request, url, form_fields=fields)
         else:
             payload = self._build_payload(request)
             url = self._endpoint_url("images/generations")
             headers["Content-Type"] = "application/json"
             kwargs = {"json": payload}
-            logger.debug(
-                f"{prefix} 请求 URL: {safe_log_url(url)}, Payload 字段: {list(payload.keys())}"
-            )
+            self._log_request_overview(request, url, payload=payload)
             self._log_debug_json("请求", payload, request.task_id)
 
         try:
@@ -120,21 +117,19 @@ class GiteeAIAdapter(BaseImageAdapter):
                 **kwargs,
             ) as resp:
                 duration = time.time() - start_time
+                self._log_response_status(request, resp.status, duration)
                 if resp.status != 200:
                     error_text = await resp.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
-                    logger.error(
-                        f"{prefix} API 错误 ({resp.status}, 耗时: {duration:.2f}s): {safe_log_error_body(error_text)}"
-                    )
+                    self._log_api_error(request, resp.status, duration, error_text)
                     return None, f"API 错误 ({resp.status})"
 
                 data = await self._read_response_json(resp, request.task_id)
-                logger.debug(f"{prefix} 生成成功 (耗时: {duration:.2f}s)")
                 return await self._extract_images(data, request.task_id)
         except Exception as e:  # noqa: BLE001
             duration = time.time() - start_time
-            logger.error(f"{prefix} 请求异常 (耗时: {duration:.2f}s): {e}")
-            return None, str(e)
+            self._log_request_exception(request, duration, e)
+            return None, safe_log_error_body(e)
 
     def _endpoint_url(self, path: str) -> str:
         """构建 Gitee AI v1 图像接口地址。"""
@@ -312,7 +307,8 @@ class GiteeAIAdapter(BaseImageAdapter):
             elif "url" in item:
                 # 如果返回的是 URL，需要下载
                 url = str(item["url"])
-                logger.debug(f"{prefix} 正在下载图像: {safe_log_url(url)}")
+                if self.debug_request_logging:
+                    logger.debug(f"{prefix} 正在下载图像: {safe_log_url(url)}")
                 if url.startswith("data:image/"):
                     if img_bytes := self._decode_base64_image(url, task_id):
                         images.append(img_bytes)
@@ -326,7 +322,8 @@ class GiteeAIAdapter(BaseImageAdapter):
         if not images:
             return None, "未生成任何图像"
 
-        logger.debug(f"{prefix} 成功提取 {len(images)} 张图像")
+        if self.debug_request_logging:
+            logger.debug(f"{prefix} 成功提取 {len(images)} 张图像")
         return images, None
 
     def _decode_base64_image(
@@ -339,7 +336,9 @@ class GiteeAIAdapter(BaseImageAdapter):
         try:
             return base64.b64decode(data)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"{self._get_log_prefix(task_id)} Base64 解码失败: {exc}")
+            logger.warning(
+                f"{self._get_log_prefix(task_id)} Base64 解码失败: {safe_log_error_body(exc)}"
+            )
             return None
 
     async def _download_image(
@@ -354,11 +353,12 @@ class GiteeAIAdapter(BaseImageAdapter):
             ) as resp:
                 if resp.status == 200:
                     data = await resp.read()
-                    logger.debug(f"{prefix} 图像下载成功: {len(data)} bytes")
+                    if self.debug_request_logging:
+                        logger.debug(f"{prefix} 图像下载成功: {len(data)} bytes")
                     return data
                 logger.error(
                     f"{prefix} 下载图像失败 ({resp.status}): {safe_log_url(url)}"
                 )
         except Exception as e:  # noqa: BLE001
-            logger.error(f"{prefix} 下载图像异常: {e}")
+            logger.error(f"{prefix} 下载图像异常: {safe_log_error_body(e)}")
         return None
