@@ -8,20 +8,29 @@ from PIL import Image
 
 from astrbot.api import logger
 
-from .constants import (
-    SUPPORTED_ASPECT_RATIOS,
-    SUPPORTED_RESOLUTIONS,
-)
-from .logging_utils import (
+from ..shared.constants import SUPPORTED_ASPECT_RATIOS, SUPPORTED_RESOLUTIONS
+from ..shared.logging import (
     log_prefix,
+)
+from ..shared.logging import (
     mask_sensitive as mask_sensitive,
+)
+from ..shared.logging import (
     safe_log_error_body as safe_log_error_body,
+)
+from ..shared.logging import (
     safe_log_mapping as safe_log_mapping,
+)
+from ..shared.logging import (
     safe_log_text as safe_log_text,
+)
+from ..shared.logging import (
     safe_log_url as safe_log_url,
 )
-from .types import ImageData
+from ..shared.types import ImageData
 
+ALLOWED_ASPECT_RATIOS = set(SUPPORTED_ASPECT_RATIOS)
+ALLOWED_RESOLUTIONS = set(SUPPORTED_RESOLUTIONS)
 SUPPORTED_IMAGE_FORMATS = {
     "image/png",
     "image/jpeg",
@@ -30,10 +39,21 @@ SUPPORTED_IMAGE_FORMATS = {
     "image/heif",
 }
 
-# 使用 constants.py 中的定义，转换为 set 以保持向后兼容
-ALLOWED_ASPECT_RATIOS = set(SUPPORTED_ASPECT_RATIOS)
-ALLOWED_RESOLUTIONS = set(SUPPORTED_RESOLUTIONS)
 LOG = log_prefix("Utils")
+
+
+def validate_aspect_ratio(value: str | None) -> str | None:
+    """Validate that the aspect ratio is supported."""
+    if value is None:
+        return None
+    return value if value in ALLOWED_ASPECT_RATIOS else None
+
+
+def validate_resolution(value: str | None) -> str | None:
+    """Validate that the resolution is supported."""
+    if value is None:
+        return None
+    return value if value in ALLOWED_RESOLUTIONS else None
 
 
 def detect_mime_type(data: bytes) -> str:
@@ -107,17 +127,17 @@ async def convert_images_batch(images: Iterable[ImageData]) -> list[ImageData]:
     return await asyncio.gather(*tasks)
 
 
-def validate_aspect_ratio(value: str | None) -> str | None:
-    """验证宽高比是否在允许的集合中。"""
-
-    if value is None:
-        return None
-    return value if value in ALLOWED_ASPECT_RATIOS else None
-
-
-def validate_resolution(value: str | None) -> str | None:
-    """验证分辨率是否在允许的集合中。"""
-
-    if value is None:
-        return None
-    return value if value in ALLOWED_RESOLUTIONS else None
+__all__ = (
+    "ALLOWED_ASPECT_RATIOS",
+    "ALLOWED_RESOLUTIONS",
+    "convert_image_format",
+    "convert_images_batch",
+    "detect_mime_type",
+    "mask_sensitive",
+    "safe_log_error_body",
+    "safe_log_mapping",
+    "safe_log_text",
+    "safe_log_url",
+    "validate_aspect_ratio",
+    "validate_resolution",
+)

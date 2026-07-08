@@ -7,14 +7,14 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import (
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import (
     GEMINI_DEFAULT_BASE_URL,
     GEMINI_SAFETY_CATEGORIES,
     UNSPECIFIED_OPTION,
 )
-from ..core.logging_utils import safe_log_error_body, safe_log_url
-from ..core.types import GenerationRequest, ImageCapability
+from ..core.shared.logging import safe_log_error_body, safe_log_url
+from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class GeminiAdapter(BaseImageAdapter):

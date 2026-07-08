@@ -6,10 +6,10 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import UNSPECIFIED_OPTION
-from ..core.logging_utils import safe_log_error_body, safe_log_mapping, safe_log_url
-from ..core.types import GenerationRequest, ImageCapability
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import UNSPECIFIED_OPTION
+from ..core.shared.logging import safe_log_error_body, safe_log_mapping, safe_log_url
+from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class Jimeng2APIAdapter(BaseImageAdapter):

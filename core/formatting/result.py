@@ -6,19 +6,20 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
-from .config_manager import (
+from ..config.manager import (
     RESULT_INFO_COUNT,
     RESULT_INFO_DURATION,
     RESULT_INFO_MODEL,
     RESULT_INFO_TASK_ID,
     RESULT_INFO_USAGE,
 )
-from .logging_utils import log_prefix, safe_log_text
+from ..tasks.models import GenerationTaskItemStatus
+from ..shared.logging import log_prefix, safe_log_text
 
 if TYPE_CHECKING:
-    from .config_manager import ConfigManager
-    from .task_manager import GenerationTaskRecord
-    from .usage_manager import UsageManager
+    from ..config.manager import ConfigManager
+    from ..tasks.models import GenerationTaskRecord
+    from ..tasks.usage import UsageManager
 
 
 LOG = log_prefix("Formatter")
@@ -142,15 +143,15 @@ def format_task_detail(record: GenerationTaskRecord) -> str:
         for item in sorted(
             record.items.values(), key=lambda task_item: task_item.index
         ):
-            if item.status == "succeeded":
+            if item.status == GenerationTaskItemStatus.SUCCEEDED:
                 item_line = f"  {item.index}. 成功，结果 {item.result_count} 张"
-            elif item.status == "failed":
+            elif item.status == GenerationTaskItemStatus.FAILED:
                 item_line = f"  {item.index}. 失败"
                 if item.error:
                     item_line += f"，错误: {safe_log_text(item.error, 120)}"
-            elif item.status == "cancelled":
+            elif item.status == GenerationTaskItemStatus.CANCELLED:
                 item_line = f"  {item.index}. 已取消"
-            elif item.status == "pending":
+            elif item.status == GenerationTaskItemStatus.PENDING:
                 item_line = f"  {item.index}. 等待中"
             else:
                 item_line = f"  {item.index}. 运行中"

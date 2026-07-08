@@ -3,8 +3,10 @@ Core module for image generation plugin
 图像生成插件的核心模块
 """
 
-from .base_adapter import BaseImageAdapter
-from .config_manager import (
+from .adapters.base import BaseImageAdapter
+from .adapters.generator import ImageGenerator
+from .audit.safety import SafetyAuditor
+from .config.manager import (
     ConfigManager,
     GenerationSettings,
     ImageAuditSettings,
@@ -13,7 +15,23 @@ from .config_manager import (
     SafetyAuditSettings,
     UsageSettings,
 )
-from .constants import (
+from .generation.executor import GenerationExecutor
+from .generation.image_processor import ImageProcessor
+from .generation.image_utils import (
+    convert_image_format,
+    convert_images_batch,
+    detect_mime_type,
+    validate_aspect_ratio,
+    validate_resolution,
+)
+from .llm.tools import (
+    ImageGenerationTool,
+    ImageTaskTool,
+    PresetEditTool,
+    PresetQueryTool,
+    adjust_tool_parameters,
+)
+from .shared.constants import (
     DEFAULT_ASPECT_RATIO,
     DEFAULT_MAX_RETRY_ATTEMPTS,
     DEFAULT_RESOLUTION,
@@ -29,16 +47,7 @@ from .constants import (
     SUPPORTED_ASPECT_RATIOS,
     SUPPORTED_RESOLUTIONS,
 )
-from .generator import ImageGenerator
-from .image_processor import ImageProcessor
-from .llm_tool import (
-    ImageGenerationTool,
-    ImageTaskTool,
-    PresetEditTool,
-    PresetQueryTool,
-    adjust_tool_parameters,
-)
-from .logging_utils import (
+from .shared.logging import (
     log_prefix,
     mask_sensitive,
     safe_log_error_body,
@@ -46,9 +55,7 @@ from .logging_utils import (
     safe_log_text,
     safe_log_url,
 )
-from .safety_auditor import SafetyAuditor
-from .task_manager import TaskManager
-from .types import (
+from .shared.types import (
     AdapterConfig,
     AdapterMetadata,
     AdapterType,
@@ -57,19 +64,22 @@ from .types import (
     ImageCapability,
     ImageData,
 )
-from .usage_manager import UsageManager
-from .utils import (
-    convert_image_format,
-    convert_images_batch,
-    detect_mime_type,
-    validate_aspect_ratio,
-    validate_resolution,
+from .tasks.manager import TaskManager
+from .tasks.models import (
+    GenerationTaskCreationError,
+    GenerationTaskItem,
+    GenerationTaskItemStatus,
+    GenerationTaskRecord,
+    GenerationTaskStatus,
 )
+from .tasks.store import GenerationTaskStore
+from .tasks.usage import UsageManager
 
 __all__ = [
     # 基类和核心组件
     "BaseImageAdapter",
     "ImageGenerator",
+    "GenerationExecutor",
     "TaskManager",
     # 新增管理器
     "ConfigManager",
@@ -95,6 +105,12 @@ __all__ = [
     "AdapterType",
     "GenerationRequest",
     "GenerationResult",
+    "GenerationTaskCreationError",
+    "GenerationTaskItem",
+    "GenerationTaskItemStatus",
+    "GenerationTaskRecord",
+    "GenerationTaskStatus",
+    "GenerationTaskStore",
     "ImageCapability",
     "ImageData",
     # 工具函数

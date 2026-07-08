@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot.api import logger
 
-from .logging_utils import log_prefix, mask_sensitive, safe_log_text, safe_log_url
-from .types import ImageCapability, ImageData
+from ..shared.logging import log_prefix, mask_sensitive, safe_log_text, safe_log_url
+from ..shared.types import ImageCapability, ImageData
 
 if TYPE_CHECKING:
     from astrbot.api.event import AstrMessageEvent

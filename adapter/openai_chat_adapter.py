@@ -10,10 +10,10 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ..core.base_adapter import BaseImageAdapter
-from ..core.constants import OPENAI_DEFAULT_BASE_URL
-from ..core.logging_utils import safe_log_error_body, safe_log_url
-from ..core.types import GenerationRequest, ImageCapability
+from ..core.adapters.base import BaseImageAdapter
+from ..core.shared.constants import OPENAI_DEFAULT_BASE_URL
+from ..core.shared.logging import safe_log_error_body, safe_log_url
+from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class OpenAIChatAdapter(BaseImageAdapter):
