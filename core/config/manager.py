@@ -247,6 +247,11 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
                 "debug_request_logging",
                 False,
             ),
+            show_user_error_details=self._get_bool(
+                fallback_runtime_cfg,
+                "show_user_error_details",
+                False,
+            ),
             non_retryable_status_codes=self._parse_int_list(
                 fallback_runtime_cfg.get(
                     "non_retryable_status_codes",
@@ -534,6 +539,11 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
     def start_task_message_template(self) -> str:
         """开始生图任务提示模板。"""
         return self._plugin_config.generation_settings.start_task_message_template
+
+    @property
+    def show_user_error_details(self) -> bool:
+        """是否向用户展示详细错误信息。"""
+        return self._plugin_config.generation_settings.show_user_error_details
 
     @property
     def usage_settings(self) -> UsageSettings:

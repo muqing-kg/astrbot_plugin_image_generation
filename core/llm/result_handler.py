@@ -20,6 +20,7 @@ from astrbot.core.tools.message_tools import SendMessageToUserTool
 from astrbot.core.utils.history_saver import persist_agent_history
 
 from ..config.manager import ConfigManager
+from ..formatting.result import format_generation_failure_message
 from ..tasks.models import GenerationTaskRecord, GenerationTaskStatus
 from ..shared.logging import log_prefix, safe_log_text
 from ..tasks.manager import TaskManager
@@ -197,7 +198,7 @@ class LLMResultHandler:
         """Build a direct user-facing fallback message when AI handling fails."""
         chain = MessageChain()
         if record.error:
-            chain.message(f"❌ 生成失败: {record.error}")
+            chain.message(format_generation_failure_message(record.error))
             return chain
 
         if not record.result_paths:

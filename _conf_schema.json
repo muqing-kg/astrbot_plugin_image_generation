@@ -1186,6 +1186,12 @@
         "type": "bool",
         "default": false
       },
+      "show_user_error_details": {
+        "description": "向用户显示详细错误信息",
+        "hint": "开启后，生图失败消息会包含经过脱敏和摘要处理的远端错误详情；关闭时只显示 API 错误类型和状态码。",
+        "type": "bool",
+        "default": false
+      },
       "non_retryable_status_codes": {
         "description": "不可重试 HTTP 状态码",
         "hint": "命中这些 HTTP 状态码时立即失败，不再重试。适用于参数错误、鉴权失败、权限不足或资源不存在等场景。",

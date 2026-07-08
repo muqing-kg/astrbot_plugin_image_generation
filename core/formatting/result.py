@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from astrbot.api import logger
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
 
 LOG = log_prefix("Formatter")
+GENERATION_ITEM_ERROR_RE = re.compile(r"^第\s*(\d+)\s*张生成失败\s*[:：]\s*(.*)$")
 
 
 class SafeFormatDict(dict[str, str]):
@@ -111,6 +113,67 @@ def format_start_task_message(
         ).format_map(values)
 
 
+def format_generation_failure_message(error: object) -> str:
+    """Build a concise user-facing generation failure message.
+
+    Args:
+        error: Raw error collected from the generation pipeline.
+
+    Returns:
+        A multi-line user-facing failure message with repeated technical prefixes
+        removed where possible.
+    """
+    raw_text = safe_log_text(error, 500) or "模型未返回图片"
+    raw_items = [
+        item.strip() for item in re.split(r"\s*;\s*", raw_text) if item.strip()
+    ]
+    if not raw_items:
+        raw_items = ["模型未返回图片"]
+
+    entries: list[tuple[str, str]] = []
+    for raw_item in raw_items[:3]:
+        item_text = raw_item
+        image_label = ""
+
+        for _ in range(4):
+            item_match = GENERATION_ITEM_ERROR_RE.match(item_text)
+            if item_match:
+                image_label = f"第 {item_match.group(1)} 张"
+                item_text = item_match.group(2).strip()
+                continue
+
+            stripped = ""
+            for prefix in ("生成失败", "重试失败"):
+                for separator in (":", "："):
+                    marker = f"{prefix}{separator}"
+                    if item_text.startswith(marker):
+                        stripped = item_text[len(marker) :].strip()
+                        break
+                if stripped:
+                    break
+
+            if not stripped:
+                break
+            item_text = stripped
+
+        entries.append((image_label, safe_log_text(item_text or "模型未返回图片", 360)))
+
+    lines = ["❌ 生成失败", "原因："]
+    show_item_label = len(raw_items) > 1
+    for image_label, reason in entries:
+        label = image_label if show_item_label and image_label else ""
+        prefix = f"{label}：" if label else ""
+        api_error_match = re.match(r"^(API 错误\s*\(\d{3}\))\s*[:：]\s*(.+)$", reason)
+        if api_error_match:
+            lines.append(f"- {prefix}{api_error_match.group(1)}")
+            lines.append(f"  详情：{api_error_match.group(2)}")
+        else:
+            lines.append(f"- {prefix}{reason}")
+    if len(raw_items) > len(entries):
+        lines.append(f"- 另有 {len(raw_items) - len(entries)} 个失败未展示")
+    return "\n".join(lines)
+
+
 def format_task_detail(record: GenerationTaskRecord) -> str:
     """Format one task record for command output."""
     stats = record.request_stats
@@ -181,7 +244,12 @@ def format_task_detail(record: GenerationTaskRecord) -> str:
     if record.message and record.message not in {"任务已提交", "任务运行中"}:
         lines.append(f"- 当前：{safe_log_text(record.message, 80)}")
     if record.error:
-        lines.append(f"- 错误：{safe_log_text(record.error, 120)}")
+        for error_line in format_generation_failure_message(record.error).splitlines()[
+            1:
+        ]:
+            lines.append(
+                error_line if error_line.startswith("- ") else f"- {error_line}"
+            )
     if record.items:
         lines.extend(["", "🧩 明细"])
         for item in sorted(

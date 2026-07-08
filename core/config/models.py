@@ -63,6 +63,7 @@ class GenerationSettings:
         DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS
     )
     debug_request_logging: bool = False
+    show_user_error_details: bool = False
     non_retryable_status_codes: list[int] = field(
         default_factory=lambda: list(DEFAULT_NON_RETRYABLE_STATUS_CODES)
     )

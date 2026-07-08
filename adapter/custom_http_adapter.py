@@ -97,7 +97,10 @@ class CustomHTTPAdapter(BaseImageAdapter):
                         error_text,
                         label="自定义 HTTP 错误",
                     )
-                    return None, f"API 错误 ({response.status})"
+                    return None, self._format_api_error_message(
+                        response.status,
+                        error_text,
+                    )
 
                 content_type = response.headers.get("Content-Type", "").lower()
                 if content_type.startswith("image/"):

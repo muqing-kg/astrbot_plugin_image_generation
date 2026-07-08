@@ -135,7 +135,14 @@ class GeminiAdapter(BaseImageAdapter):
                     error_text = await response.text()
                     self._log_debug_json_text("响应", error_text, request.task_id)
                     self._log_api_error(request, response.status, duration, error_text)
-                    return {"error": {"message": f"API 错误 ({response.status})"}}
+                    return {
+                        "error": {
+                            "message": self._format_api_error_message(
+                                response.status,
+                                error_text,
+                            )
+                        }
+                    }
                 return await self._read_response_json(response, request.task_id)
         except Exception as e:
             duration = time.time() - start_time

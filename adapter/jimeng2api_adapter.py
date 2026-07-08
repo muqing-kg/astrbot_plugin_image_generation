@@ -84,7 +84,10 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                             error_text,
                             label="Compositions 错误",
                         )
-                        return None, f"API 错误 ({resp.status})"
+                        return None, self._format_api_error_message(
+                            resp.status,
+                            error_text,
+                        )
 
                     data_json = await self._read_response_json(resp, request.task_id)
                     if self.debug_request_logging:
@@ -128,7 +131,10 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                             error_text,
                             label="Generations 错误",
                         )
-                        return None, f"API 错误 ({resp.status})"
+                        return None, self._format_api_error_message(
+                            resp.status,
+                            error_text,
+                        )
 
                     data_json = await self._read_response_json(resp, request.task_id)
                     if self.debug_request_logging:
