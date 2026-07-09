@@ -1247,7 +1247,7 @@
           "max": 20,
           "step": 1
         },
-        "default": 1
+        "default": 3
       },
       "max_queued_generation_tasks": {
         "description": "最大排队生图任务数",
