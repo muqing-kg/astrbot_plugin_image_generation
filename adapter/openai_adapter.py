@@ -15,26 +15,26 @@ from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class OpenAIAdapter(BaseImageAdapter):
-    """OpenAI 图像生成适配器 (DALL-E / GPT Image Models)。"""
+    """OpenAI image generation adapter for DALL-E and GPT Image models."""
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
     def _is_gpt_image_model(self) -> bool:
-        """判断当前是否为 GPT image model (gpt-image-*)。"""
+        """Return whether the active model is a GPT Image model."""
         model_family = self.config.extra.get("model_family", "auto")
         if model_family == "gpt-image":
             return True
         if model_family == "dall-e":
             return False
-        # auto: 根据模型名称判断
+        # auto: infer the family from the model name.
         return self.model is not None and "gpt-image" in self.model
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
         prefix = self._get_log_prefix(request.task_id)
 
@@ -106,7 +106,7 @@ class OpenAIAdapter(BaseImageAdapter):
             return None, safe_log_error_body(e)
 
     def _build_payload(self, request: GenerationRequest) -> dict:
-        """构建请求载荷。"""
+        """Build the request payload."""
         gpt = self._is_gpt_image_model()
         payload: dict[str, Any] = {
             "model": self.model or "dall-e-3",
@@ -116,9 +116,9 @@ class OpenAIAdapter(BaseImageAdapter):
 
         if size := self._map_aspect_ratio_to_size(request.aspect_ratio, gpt_model=gpt):
             payload["size"] = size
-        # 注意：OpenAI 模型不支持配置分辨率（输出固定为 1K~1.5K），quality 是品质参数，与分辨率无关
+        # OpenAI models do not support the plugin resolution setting; quality is separate.
         if not gpt:
-            # GPT image models 始终返回 b64_json，不支持 response_format 参数
+            # GPT Image models always return b64_json and do not support response_format.
             payload["response_format"] = "b64_json"
 
         return payload
@@ -126,13 +126,13 @@ class OpenAIAdapter(BaseImageAdapter):
     def _map_aspect_ratio_to_size(
         self, aspect_ratio: str | None, gpt_model: bool
     ) -> str | None:
-        """将宽高比映射为 OpenAI 支持的 size 参数。"""
+        """Map an aspect ratio to an OpenAI-supported size parameter."""
         if not aspect_ratio or aspect_ratio == UNSPECIFIED_OPTION:
             return None
 
         if gpt_model:
-            # GPT image models 仅支持 auto, 1024x1024, 1536x1024 (横), 1024x1536 (竖)
-            # 如果用户指定了其他比例，尽量匹配最接近的
+            # GPT Image models support only square, landscape, and portrait sizes.
+            # Map unsupported ratios to the closest supported size.
             mapping = {
                 "1:1": "1024x1024",
                 "3:2": "1536x1024",
@@ -146,8 +146,8 @@ class OpenAIAdapter(BaseImageAdapter):
                 "4:5": "1024x1536",
             }
         else:
-            # DALL-E 3 仅支持 1024x1024, 1024x1792, 1792x1024
-            # 如果用户指定了其他比例，尽量匹配最接近的
+            # DALL-E 3 supports only square, landscape, and portrait sizes.
+            # Map unsupported ratios to the closest supported size.
             mapping = {
                 "1:1": "1024x1024",
                 "3:2": "1792x1024",
@@ -165,7 +165,7 @@ class OpenAIAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict
     ) -> tuple[list[bytes] | None, str | None]:
-        """从响应中提取图片数据。"""
+        """Extract image bytes from the response payload."""
         if "data" not in response:
             return None, "响应中未找到 data 字段"
 
@@ -174,7 +174,7 @@ class OpenAIAdapter(BaseImageAdapter):
             if "b64_json" in item:
                 images.append(base64.b64decode(item["b64_json"]))
             elif "url" in item:
-                # 如果返回的是 URL，需要下载（虽然我们请求的是 b64_json）
+                # Download URL results even though b64_json is requested.
                 async with self._get_session().get(
                     item["url"], proxy=self.proxy, timeout=self._get_download_timeout()
                 ) as resp:

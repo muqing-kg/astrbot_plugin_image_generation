@@ -15,6 +15,8 @@ from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
 from ..config.templates import (
+    build_generation_prompt,
+    find_named_entry,
     format_template_summary,
     normalize_name_items as _normalize_name_items,
     parse_preset_prompt,
@@ -109,24 +111,21 @@ def normalize_task_action(action: str) -> str:
 def _parse_preset(
     plugin: Any,
     preset_names: Any,
-    prompt: str,
     aspect_ratio: Any,
     resolution: Any,
-) -> tuple[str, str, str, list[str], str | None]:
+) -> tuple[list[str], str, str, list[str], str | None]:
     """Apply one or more preset prompts and optional generation overrides."""
     names = normalize_name_items(preset_names)
     if not names:
-        return str(prompt).strip(), str(aspect_ratio), str(resolution), [], None
+        return [], str(aspect_ratio), str(resolution), [], None
 
     prompt_parts: list[str] = []
     matched_presets: list[str] = []
     for preset_name in names:
-        matched_preset = plugin._find_named_entry(
-            plugin.config_manager.presets, preset_name
-        )
+        matched_preset = find_named_entry(plugin.config_manager.presets, preset_name)
         if not matched_preset:
             return (
-                "",
+                [],
                 str(aspect_ratio),
                 str(resolution),
                 [],
@@ -143,32 +142,28 @@ def _parse_preset(
             prompt_parts.append(preset_prompt)
         matched_presets.append(matched_preset)
 
-    if prompt := str(prompt).strip():
-        prompt_parts.append(prompt)
-    final_prompt = " ".join(prompt_parts).strip()
-    return final_prompt, str(aspect_ratio), str(resolution), matched_presets, None
+    return prompt_parts, str(aspect_ratio), str(resolution), matched_presets, None
 
 
 def _parse_persona(
     plugin: Any,
     persona_names: Any,
-    prompt: str,
-) -> tuple[str, list[tuple[str, str]], list[str], str | None]:
+) -> tuple[list[str], list[tuple[str, str]], list[str], str | None]:
     """Apply one or more persona prompts and reference images."""
     names = normalize_name_items(persona_names)
     if not names:
-        return str(prompt).strip(), [], [], None
+        return [], [], [], None
 
     prompt_parts: list[str] = []
     persona_images: list[tuple[str, str]] = []
     matched_personas: list[str] = []
     for persona_name in names:
-        matched_persona = plugin._find_named_entry(
+        matched_persona = find_named_entry(
             plugin.config_manager.personas,
             persona_name,
         )
         if not matched_persona:
-            return "", [], [], f"❌ 人设不存在: {persona_name}"
+            return [], [], [], f"❌ 人设不存在: {persona_name}"
 
         persona = plugin.config_manager.personas[matched_persona]
         persona_prompt = persona.prompt.strip()
@@ -178,10 +173,7 @@ def _parse_persona(
             persona_images.append((matched_persona, persona.image))
         matched_personas.append(matched_persona)
 
-    if prompt := str(prompt).strip():
-        prompt_parts.append(prompt)
-    final_prompt = " ".join(prompt_parts).strip()
-    return final_prompt, persona_images, matched_personas, None
+    return prompt_parts, persona_images, matched_personas, None
 
 
 async def _start_generation_task(
@@ -330,7 +322,7 @@ async def _start_generation_task(
 
 @pydantic_dataclass
 class ImageGenerationTool(FunctionTool[AstrAgentContext]):
-    """LLM 可调用的统一生图工具。"""
+    """Unified image generation tool callable by the LLM."""
 
     name: str = "generate_image"
     description: str = (
@@ -391,7 +383,7 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
     async def call(
         self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
     ) -> ToolExecResult:
-        """执行通用生图工具调用。"""
+        """Execute the image generation tool call."""
         plugin = self.plugin
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
@@ -403,22 +395,27 @@ class ImageGenerationTool(FunctionTool[AstrAgentContext]):
             kwargs.get("resolution") or plugin.config_manager.default_resolution
         )
 
-        prompt, aspect_ratio, resolution, matched_presets, error = _parse_preset(
-            plugin,
-            kwargs.get("preset"),
-            prompt,
-            aspect_ratio,
-            resolution,
+        preset_prompts, aspect_ratio, resolution, matched_presets, error = (
+            _parse_preset(
+                plugin,
+                kwargs.get("preset"),
+                aspect_ratio,
+                resolution,
+            )
         )
         if error:
             return error
-        prompt, persona_images, matched_personas, error = _parse_persona(
+        persona_prompts, persona_images, matched_personas, error = _parse_persona(
             plugin,
             kwargs.get("persona"),
-            prompt,
         )
         if error:
             return error
+        prompt = build_generation_prompt(
+            preset_prompts=preset_prompts,
+            persona_prompts=persona_prompts,
+            extra_prompt=prompt,
+        )
         if not prompt:
             return "❌ 请提供图片生成的提示词、预设或人设"
 
@@ -516,7 +513,7 @@ def _validate_preset_content(content: str) -> str | None:
 
 @pydantic_dataclass
 class PresetQueryTool(FunctionTool[AstrAgentContext]):
-    """LLM 可调用的预设/人设查询工具。"""
+    """Preset and persona query tool callable by the LLM."""
 
     name: str = "query_image_presets"
     description: str = (
@@ -547,7 +544,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
     async def call(
         self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
     ) -> ToolExecResult:
-        """执行预设/人设查询工具调用。"""
+        """Execute the preset/persona query tool call."""
         plugin = self.plugin
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
@@ -570,9 +567,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
 
         if category == "persona":
             if name:
-                matched_name = plugin._find_named_entry(
-                    plugin.config_manager.personas, name
-                )
+                matched_name = find_named_entry(plugin.config_manager.personas, name)
                 if not matched_name:
                     return f"❌ 人设不存在: {name}"
                 return _format_persona_detail(
@@ -591,7 +586,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
             return "\n".join(lines)
 
         if name:
-            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
+            matched_name = find_named_entry(plugin.config_manager.presets, name)
             if not matched_name:
                 return f"❌ 预设不存在: {name}"
             return _format_preset_detail(
@@ -608,7 +603,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
 
 @pydantic_dataclass
 class PresetEditTool(FunctionTool[AstrAgentContext]):
-    """LLM 可调用的预设编辑工具。"""
+    """Preset editing tool callable by the LLM."""
 
     name: str = "edit_image_presets"
     description: str = (
@@ -645,7 +640,7 @@ class PresetEditTool(FunctionTool[AstrAgentContext]):
     async def call(
         self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
     ) -> ToolExecResult:
-        """执行预设编辑工具调用。"""
+        """Execute the preset editing tool call."""
         plugin = self.plugin
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
@@ -678,7 +673,7 @@ class PresetEditTool(FunctionTool[AstrAgentContext]):
             return f"✅ 预设已保存: {name}"
 
         if action == "delete_preset":
-            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
+            matched_name = find_named_entry(plugin.config_manager.presets, name)
             if not matched_name:
                 return f"❌ 预设不存在: {name}"
             plugin.config_manager.delete_preset(matched_name)
@@ -689,7 +684,7 @@ class PresetEditTool(FunctionTool[AstrAgentContext]):
 
 @pydantic_dataclass
 class ImageTaskTool(FunctionTool[AstrAgentContext]):
-    """LLM 可调用的生图任务管理工具。"""
+    """Image task management tool callable by the LLM."""
 
     name: str = "manage_image_tasks"
     description: str = (
@@ -721,7 +716,7 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
     async def call(
         self, context: ContextWrapper[AstrAgentContext], **kwargs: Any
     ) -> ToolExecResult:
-        """执行生图任务管理工具调用。"""
+        """Execute the image task management tool call."""
         plugin = self.plugin
         if not plugin:
             return "❌ 插件未正确初始化 (Plugin instance missing)"
@@ -793,23 +788,20 @@ class ImageTaskTool(FunctionTool[AstrAgentContext]):
 def adjust_tool_parameters(
     tool: FunctionTool[AstrAgentContext], capabilities: ImageCapability
 ) -> None:
-    """根据适配器能力动态调整工具参数。"""
+    """Adjust tool parameters dynamically based on adapter capabilities."""
     props = tool.parameters.get("properties", {})
 
-    if not (capabilities & ImageCapability.ASPECT_RATIO):
-        if "aspect_ratio" in props:
-            del props["aspect_ratio"]
-            logger.debug(f"{LOG} 适配器不支持宽高比，已从工具参数中移除")
-
-    if not (capabilities & ImageCapability.RESOLUTION):
-        if "resolution" in props:
-            del props["resolution"]
-            logger.debug(f"{LOG} 适配器不支持分辨率，已从工具参数中移除")
+    unsupported_parameters = (
+        (ImageCapability.ASPECT_RATIO, "aspect_ratio", "宽高比"),
+        (ImageCapability.RESOLUTION, "resolution", "分辨率"),
+    )
+    for capability, key, label in unsupported_parameters:
+        if not (capabilities & capability) and props.pop(key, None) is not None:
+            logger.debug(f"{LOG} 适配器不支持{label}，已从工具参数中移除")
 
     if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
         for key in ("avatar_references", "reference_images"):
-            if key in props:
-                del props[key]
+            props.pop(key, None)
         logger.debug(f"{LOG} 适配器不支持参考图，已从工具参数中移除参考图相关参数")
 
 

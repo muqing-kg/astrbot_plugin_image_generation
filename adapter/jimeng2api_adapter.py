@@ -13,18 +13,18 @@ from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class Jimeng2APIAdapter(BaseImageAdapter):
-    """Jimeng2API 图像生成适配器。"""
+    """Jimeng2API image generation adapter."""
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
-    # generate() 方法由基类提供，使用模板方法模式
+    # generate() is provided by the base class via the template method pattern.
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
         session = self._get_session()
         prefix = self._get_log_prefix(request.task_id)
@@ -43,7 +43,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
 
         try:
             if request.images:
-                # 图生图：改为 JSON，images 作为 data URL（服务端声明只接受 URL 或本地文件）
+                # Image-to-image uses JSON with data URLs for the image list.
                 url = f"{base_url.rstrip('/')}/v1/images/compositions"
                 headers["Content-Type"] = "application/json"
 
@@ -96,14 +96,14 @@ class Jimeng2APIAdapter(BaseImageAdapter):
                         )
                     return await self._extract_images(data_json, request.task_id)
             else:
-                # 文生图
+                # Text-to-image request.
                 url = f"{base_url.rstrip('/')}/v1/images/generations"
                 headers["Content-Type"] = "application/json"
 
                 payload = {
                     "model": self.model or "jimeng-4.5",
                     "prompt": prompt_text,
-                    "response_format": "url",  # 默认使用 url，然后下载
+                    "response_format": "url",  # Use URLs by default, then download them.
                 }
                 if request.aspect_ratio and request.aspect_ratio != UNSPECIFIED_OPTION:
                     payload["ratio"] = request.aspect_ratio
@@ -151,7 +151,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict, task_id: str | None = None
     ) -> tuple[list[bytes] | None, str | None]:
-        """从响应中提取图片数据。"""
+        """Extract image bytes from the response payload."""
         prefix = self._get_log_prefix(task_id)
         if response is None:
             return None, "响应为空"
@@ -183,7 +183,7 @@ class Jimeng2APIAdapter(BaseImageAdapter):
         return images, None
 
     async def receive_token(self) -> dict[str, Any]:
-        """为所有 API Key 自动领取积分。"""
+        """Receive credits for all configured API keys."""
         results = {}
         if not self.api_keys:
             return {"error": "未配置 API Key"}

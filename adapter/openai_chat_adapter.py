@@ -17,20 +17,20 @@ from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class OpenAIChatAdapter(BaseImageAdapter):
-    """通用 OpenAI Chat Completions 兼容图像生成适配器。"""
+    """Generic OpenAI Chat Completions-compatible image generation adapter."""
 
     DEFAULT_BASE_URL = OPENAI_DEFAULT_BASE_URL
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
-    # generate() 方法由基类提供，使用模板方法模式
+    # generate() is provided by the base class via the template method pattern.
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         payload = self._build_payload(request)
         session = self._get_session()
         response = await self._make_request(session, payload, request)
@@ -46,7 +46,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
         if images:
             return images, None
 
-        # 尝试提取文本错误信息
+        # Try to extract a text error from chat completion responses.
         if "choices" in response and response["choices"]:
             content = response["choices"][0].get("message", {}).get("content")
             if isinstance(content, str) and content.strip():
@@ -54,7 +54,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
         return None, "响应中未找到图片 data"
 
     def _build_payload(self, request: GenerationRequest) -> dict:
-        """构建请求载荷。"""
+        """Build the request payload."""
         message_content: list[dict] = [
             {"type": "text", "text": self._build_prompt_text(request.prompt)}
         ]
@@ -144,7 +144,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
         payload: dict,
         request: GenerationRequest,
     ) -> dict | None:
-        """发送 API 请求。"""
+        """Send the API request."""
         start_time = time.time()
         url = self._build_chat_completions_url()
         api_key = self._get_current_api_key()
@@ -201,7 +201,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
     async def _download_image_from_url(
         self, url: str, task_id: str | None = None
     ) -> bytes | None:
-        """从 URL 下载图像。"""
+        """Download image bytes from a URL."""
         prefix = self._get_log_prefix(task_id)
         try:
             session = self._get_session()
@@ -220,11 +220,11 @@ class OpenAIChatAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response_data: dict[str, Any], task_id: str | None = None
     ) -> list[bytes] | None:
-        """从响应数据中提取图像。"""
+        """Extract image bytes from response data."""
         images: list[bytes] = []
         prefix = self._get_log_prefix(task_id)
 
-        # DALL-E 风格
+        # DALL-E-style response data.
         if isinstance(response_data.get("data"), list):
             for item in response_data["data"]:
                 if not isinstance(item, dict):
@@ -245,7 +245,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
                         if decoded:
                             images.append(decoded)
 
-        # 聊天补全风格
+        # Chat-completions-style response data.
         if choices := response_data.get("choices"):
             message = (
                 choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
@@ -314,7 +314,7 @@ class OpenAIChatAdapter(BaseImageAdapter):
         return images or None
 
     def _decode_image_url(self, url: str, task_id: str | None = None) -> bytes | None:
-        """解码 Data URL 形式的图像。"""
+        """Decode an image represented as a data URL."""
         if url.startswith("data:image/") and ";base64," in url:
             try:
                 _, _, data_part = url.partition(";base64,")

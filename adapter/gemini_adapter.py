@@ -18,20 +18,20 @@ from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class GeminiAdapter(BaseImageAdapter):
-    """Gemini 原生图像生成适配器。"""
+    """Native Gemini image generation adapter."""
 
     DEFAULT_BASE_URL = GEMINI_DEFAULT_BASE_URL
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
-    # generate() 方法由基类提供，使用模板方法模式
+    # generate() is provided by the base class via the template method pattern.
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         payload = self._build_payload(request)
         session = self._get_session()
         response = await self._make_request(session, payload, request)
@@ -49,7 +49,7 @@ class GeminiAdapter(BaseImageAdapter):
         return None, "响应中未找到图片数据"
 
     def _build_payload(self, request: GenerationRequest) -> dict:
-        """构建请求载荷。"""
+        """Build the request payload."""
         generation_config: dict = {"responseModalities": ["IMAGE"]}
         image_config: dict = {}
 
@@ -104,7 +104,7 @@ class GeminiAdapter(BaseImageAdapter):
         payload: dict,
         request: GenerationRequest,
     ) -> dict | None:
-        """发送 API 请求。"""
+        """Send the API request."""
         start_time = time.time()
         url = f"{self.base_url or self.DEFAULT_BASE_URL}/v1beta/models/{self.model}:generateContent"
         api_key = self._get_current_api_key()
@@ -152,7 +152,7 @@ class GeminiAdapter(BaseImageAdapter):
     def _extract_images(
         self, response: dict, task_id: str | None
     ) -> list[bytes] | None:
-        """从响应中提取图像数据。"""
+        """Extract image bytes from the response payload."""
         prefix = self._get_log_prefix(task_id)
         try:
             candidates = response.get("candidates", [])

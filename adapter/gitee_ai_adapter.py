@@ -30,7 +30,7 @@ from ..core.shared.types import (
 
 
 class GiteeAIAdapter(BaseImageAdapter):
-    """Gitee AI 通用图像生成/编辑适配器。"""
+    """General Gitee AI image generation and editing adapter."""
 
     DEFAULT_BASE_URL = GITEE_AI_DEFAULT_BASE_URL
     DEFAULT_TEXT_MODEL = "z-image-turbo"
@@ -69,13 +69,13 @@ class GiteeAIAdapter(BaseImageAdapter):
     }
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
-    # generate() 方法由基类提供，使用模板方法模式
+    # generate() is provided by the base class via the template method pattern.
 
     def _pre_generate(self, request: GenerationRequest) -> GenerationResult | None:
-        """记录 Gitee AI 请求概要。"""
+        """Log a Gitee AI request overview."""
         prefix = self._get_log_prefix(request.task_id)
         mode = "图片编辑" if self._should_use_edits(request) else "文本生成图片"
         logger.debug(
@@ -86,7 +86,7 @@ class GiteeAIAdapter(BaseImageAdapter):
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
         session = self._get_session()
 
@@ -135,7 +135,7 @@ class GiteeAIAdapter(BaseImageAdapter):
             return None, safe_log_error_body(e)
 
     def _endpoint_url(self, path: str) -> str:
-        """构建 Gitee AI v1 图像接口地址。"""
+        """Build a Gitee AI v1 image endpoint URL."""
         base = (self.base_url or self.DEFAULT_BASE_URL).rstrip("/")
         for suffix in ("/v1/images/generations", "/v1/images/edits"):
             if base.endswith(suffix):
@@ -147,7 +147,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         return f"{base}/v1/{path}"
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
-        """构建图片生成请求载荷。"""
+        """Build the image generation request payload."""
         payload: dict[str, Any] = {
             "model": self._model_name(request),
             "prompt": request.prompt,
@@ -164,7 +164,7 @@ class GiteeAIAdapter(BaseImageAdapter):
     def _build_edit_form(
         self, request: GenerationRequest
     ) -> tuple[aiohttp.FormData, list[str]]:
-        """构建图片编辑 multipart/form-data 请求。"""
+        """Build the image editing multipart/form-data request."""
         form = aiohttp.FormData()
         fields: list[str] = []
 
@@ -190,7 +190,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         return form, fields
 
     def _resolve_size(self, request: GenerationRequest) -> str | None:
-        """按宽高比和分辨率解析 Gitee AI size 参数。"""
+        """Resolve the Gitee AI size parameter from aspect ratio and resolution."""
         if (
             not request.aspect_ratio
             or request.aspect_ratio == UNSPECIFIED_OPTION
@@ -222,7 +222,7 @@ class GiteeAIAdapter(BaseImageAdapter):
     def _add_generation_image(
         self, payload: dict[str, Any], images: list[ImageData], task_id: str | None
     ) -> None:
-        """为 /images/generations 添加参考图。"""
+        """Add a reference image to /images/generations payloads."""
         if not images:
             return
         if len(images) > 1:
@@ -232,7 +232,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         payload["image"] = base64.b64encode(images[0].data).decode("ascii")
 
     def _model_name(self, request: GenerationRequest | None = None) -> str:
-        """获取当前模型名称。"""
+        """Return the active model name."""
         if request and self._should_use_edits(request):
             edit_model = str(self.config.extra.get("edit_model") or "").strip()
             if edit_model:
@@ -245,7 +245,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         return self.DEFAULT_TEXT_MODEL
 
     def _should_use_edits(self, request: GenerationRequest) -> bool:
-        """判断当前请求是否应使用图片编辑接口。"""
+        """Return whether the request should use the image editing endpoint."""
         if not request.images:
             return False
         endpoint_mode = self._image_endpoint_mode()
@@ -258,7 +258,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         return self._looks_like_edit_model(self.model)
 
     def _image_endpoint_mode(self) -> str:
-        """获取图生图接口选择。"""
+        """Return the configured image-to-image endpoint mode."""
         endpoint_mode = (
             str(self.config.extra.get("image_endpoint") or "auto").strip().lower()
         )
@@ -267,7 +267,7 @@ class GiteeAIAdapter(BaseImageAdapter):
         return "auto"
 
     def _looks_like_edit_model(self, model: str | None) -> bool:
-        """判断当前模型名称是否像 Gitee AI 图片编辑模型。"""
+        """Return whether a model name looks like a Gitee AI edit model."""
         model_name = (model or "").lower()
         if model_name in self.EDIT_MODELS:
             return True
@@ -277,14 +277,14 @@ class GiteeAIAdapter(BaseImageAdapter):
         )
 
     def _image_filename(self, index: int, mime_type: str) -> str:
-        """根据 MIME 类型生成上传文件名。"""
+        """Build an upload filename from the MIME type."""
         extension = self.IMAGE_EXTENSIONS.get((mime_type or "").lower(), "png")
         return f"image_{index}.{extension}"
 
     async def _extract_images(
         self, data: dict, task_id: str | None = None
     ) -> tuple[list[bytes] | None, str | None]:
-        """从 API 响应中提取图像数据。"""
+        """Extract image bytes from an API response."""
         prefix = self._get_log_prefix(task_id)
 
         if response_error := data.get("error"):
@@ -308,7 +308,7 @@ class GiteeAIAdapter(BaseImageAdapter):
                 if img_bytes := self._decode_base64_image(item["b64_json"], task_id):
                     images.append(img_bytes)
             elif "url" in item:
-                # 如果返回的是 URL，需要下载
+                # Download URL results when the provider returns URLs.
                 url = str(item["url"])
                 if self.debug_request_logging:
                     logger.debug(f"{prefix} 正在下载图像: {safe_log_url(url)}")
@@ -332,7 +332,7 @@ class GiteeAIAdapter(BaseImageAdapter):
     def _decode_base64_image(
         self, value: Any, task_id: str | None = None
     ) -> bytes | None:
-        """解码 b64_json 或 data URL 图片。"""
+        """Decode a b64_json or data URL image value."""
         data = str(value or "")
         if ";base64," in data:
             _, _, data = data.partition(";base64,")
@@ -347,7 +347,7 @@ class GiteeAIAdapter(BaseImageAdapter):
     async def _download_image(
         self, url: str, task_id: str | None = None
     ) -> bytes | None:
-        """下载图像。"""
+        """Download an image URL."""
         session = self._get_session()
         prefix = self._get_log_prefix(task_id)
         try:

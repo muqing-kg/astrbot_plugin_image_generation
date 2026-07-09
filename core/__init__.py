@@ -1,7 +1,4 @@
-"""
-Core module for image generation plugin
-图像生成插件的核心模块
-"""
+"""Core module for the image generation plugin."""
 
 from .adapters.base import BaseImageAdapter
 from .adapters.generator import ImageGenerator
@@ -76,30 +73,30 @@ from .tasks.store import GenerationTaskStore
 from .tasks.usage import UsageManager
 
 __all__ = [
-    # 基类和核心组件
+    # Base classes and core components.
     "BaseImageAdapter",
     "ImageGenerator",
     "GenerationExecutor",
     "TaskManager",
-    # 新增管理器
+    # Managers.
     "ConfigManager",
     "UsageManager",
     "ImageProcessor",
-    # 配置数据类
+    # Configuration data classes.
     "PluginConfig",
     "UsageSettings",
     "GenerationSettings",
     "PromptAuditSettings",
     "ImageAuditSettings",
     "SafetyAuditSettings",
-    # LLM 工具
+    # LLM tools.
     "ImageGenerationTool",
     "ImageTaskTool",
     "PresetQueryTool",
     "PresetEditTool",
     "adjust_tool_parameters",
     "SafetyAuditor",
-    # 数据类型
+    # Data types.
     "AdapterConfig",
     "AdapterMetadata",
     "AdapterType",
@@ -113,7 +110,7 @@ __all__ = [
     "GenerationTaskStore",
     "ImageCapability",
     "ImageData",
-    # 工具函数
+    # Utility functions.
     "convert_image_format",
     "convert_images_batch",
     "detect_mime_type",
@@ -125,7 +122,7 @@ __all__ = [
     "safe_log_url",
     "validate_aspect_ratio",
     "validate_resolution",
-    # 常量
+    # Constants.
     "LOG_PREFIX",
     "DEFAULT_TIMEOUT",
     "DEFAULT_MAX_RETRY_ATTEMPTS",

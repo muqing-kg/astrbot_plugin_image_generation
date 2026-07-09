@@ -33,7 +33,7 @@ from ..shared.types import AdapterConfig
 
 @dataclass
 class UsageSettings:
-    """用户使用限制设置。"""
+    """User usage limit settings."""
 
     rate_limit_seconds: int = DEFAULT_RATE_LIMIT_SECONDS
     enable_daily_limit: bool = False
@@ -47,7 +47,7 @@ class UsageSettings:
 
 @dataclass
 class GenerationSettings:
-    """生成设置。"""
+    """Image generation behavior settings."""
 
     default_aspect_ratio: str = DEFAULT_ASPECT_RATIO
     default_resolution: str = DEFAULT_RESOLUTION
@@ -78,7 +78,7 @@ class GenerationSettings:
 
 @dataclass
 class PersonaTemplate:
-    """生图人设模板。"""
+    """Image generation persona template."""
 
     name: str
     prompt: str
@@ -87,7 +87,7 @@ class PersonaTemplate:
 
 @dataclass
 class PromptAuditSettings:
-    """生图前提示词审核设置。"""
+    """Pre-generation prompt audit settings."""
 
     blocked_words: list[str] = field(default_factory=list)
     enable_ai_audit: bool = False
@@ -98,7 +98,7 @@ class PromptAuditSettings:
 
 @dataclass
 class ImageAuditSettings:
-    """生图后图片审核设置。"""
+    """Post-generation image audit settings."""
 
     enable_ai_audit: bool = False
     ai_provider_id: str = ""
@@ -108,7 +108,7 @@ class ImageAuditSettings:
 
 @dataclass
 class SafetyAuditSettings:
-    """安全审核总设置。"""
+    """Safety audit settings."""
 
     umo_whitelist: list[str] = field(default_factory=list)
     prompt_audit: PromptAuditSettings = field(default_factory=PromptAuditSettings)
@@ -117,7 +117,7 @@ class SafetyAuditSettings:
 
 @dataclass
 class PluginConfig:
-    """完整的插件配置。"""
+    """Complete plugin configuration."""
 
     adapter_config: AdapterConfig | None = None
     usage_settings: UsageSettings = field(default_factory=UsageSettings)

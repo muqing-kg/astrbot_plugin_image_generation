@@ -57,7 +57,7 @@ def validate_resolution(value: str | None) -> str | None:
 
 
 def detect_mime_type(data: bytes) -> str:
-    """根据魔数（Magic Numbers）尽力检测 MIME 类型。"""
+    """Detect the MIME type from magic bytes when possible."""
 
     if data.startswith(b"\xff\xd8"):
         return "image/jpeg"
@@ -79,7 +79,7 @@ def detect_mime_type(data: bytes) -> str:
 def _sync_convert_image_format(
     image_data: bytes, mime_type: str, source_url: str | None = None
 ) -> ImageData:
-    """同步将不支持的图像转换为 JPEG。"""
+    """Synchronously convert unsupported image formats to JPEG."""
 
     try:
         img = Image.open(BytesIO(image_data))
@@ -106,7 +106,7 @@ def _sync_convert_image_format(
 async def convert_image_format(
     image_data: bytes, mime_type: str, source_url: str | None = None
 ) -> ImageData:
-    """如果 MIME 类型不支持，则转换图像。"""
+    """Convert image bytes when the MIME type is unsupported."""
 
     real_mime = detect_mime_type(image_data)
     if real_mime in SUPPORTED_IMAGE_FORMATS:
@@ -118,7 +118,7 @@ async def convert_image_format(
 
 
 async def convert_images_batch(images: Iterable[ImageData]) -> list[ImageData]:
-    """并行批量转换图像。"""
+    """Convert a batch of images concurrently."""
 
     tasks = [
         convert_image_format(img.data, img.mime_type, img.source_url) for img in images

@@ -233,7 +233,7 @@ class ConfigProviderParserMixin:
     def _parse_capability_options(
         self, provider_item: dict[str, Any]
     ) -> dict[str, bool]:
-        """解析供应商能力配置（完全由配置驱动）。"""
+        """Parse provider capability options from configuration."""
         raw = provider_item.get("capability_options", [])
 
         supported_keys = (
@@ -269,7 +269,7 @@ class ConfigProviderParserMixin:
         return {key: key in selected for key in supported_keys}
 
     def _clean_base_url(self, url: str, *, preserve_version_path: bool = False) -> str:
-        """清理 Base URL，移除末尾的 /v1*"""
+        """Clean a base URL and optionally remove trailing /v1 paths."""
         if not url:
             return ""
         url = url.rstrip("/")

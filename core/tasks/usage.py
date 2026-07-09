@@ -1,6 +1,4 @@
-"""
-用户使用数据管理模块
-"""
+"""User usage accounting and quota management."""
 
 from __future__ import annotations
 
@@ -23,7 +21,7 @@ LOG = log_prefix("Usage")
 
 
 class UsageManager:
-    """用户使用数据管理器。"""
+    """Manage user usage counts, reservations, and cooldowns."""
 
     def __init__(self, data_dir: str, settings: UsageSettings):
         self._data_dir = Path(data_dir)
@@ -31,21 +29,21 @@ class UsageManager:
         self._usage_file = self._data_dir / "usage.json"
         self._usage_data: dict[str, dict[str, int]] = {}  # {date: {user_id: count}}
         self._usage_reservations: dict[str, dict[str, int]] = {}
-        self._user_request_timestamps: dict[str, float] = {}  # 用于频率限制
+        self._user_request_timestamps: dict[str, float] = {}  # Used for cooldowns.
         self._load_usage_data()
 
     def update_settings(self, settings: UsageSettings) -> None:
-        """更新设置。"""
+        """Update usage settings."""
         self._settings = settings
 
     def _load_usage_data(self) -> None:
-        """加载用户使用数据。"""
+        """Load persisted usage data."""
         if self._usage_file.exists():
             try:
                 with self._usage_file.open(encoding="utf-8") as f:
                     self._usage_data = json.load(f)
 
-                # 清理旧数据，只保留最近 N 天（由 USAGE_DATA_RETENTION_DAYS 控制）
+                # Keep only recent usage data according to the retention policy.
                 today = datetime.date.today()
                 keys_to_delete = []
                 for date_str in self._usage_data:
@@ -65,7 +63,7 @@ class UsageManager:
                 self._usage_data = {}
 
     def _save_usage_data(self) -> None:
-        """保存用户使用数据。"""
+        """Persist usage data."""
         try:
             self._usage_file.parent.mkdir(parents=True, exist_ok=True)
             with self._usage_file.open("w", encoding="utf-8") as f:
@@ -114,18 +112,17 @@ class UsageManager:
         requested_count: int = 1,
         update_timestamp: bool = True,
     ) -> bool | str:
-        """检查用户请求频率限制和每日限制。
+        """Check per-user cooldowns and daily quota limits.
 
-        返回:
-            - True: 检查通过
-            - str: 错误消息
+        Returns:
+            True when checks pass, otherwise a user-facing error message.
 
         Args:
             update_timestamp: Whether to reserve the cooldown when checks pass.
         """
         user_id = str(user_id or "").strip()
 
-        # 1. 检查频率限制
+        # Check cooldown limits first.
         if self.is_limit_exempt(user_id, is_admin=is_admin):
             return True
 
@@ -141,7 +138,7 @@ class UsageManager:
             if update_timestamp:
                 self._user_request_timestamps[user_id] = now
 
-        # 2. 检查每日限制
+        # Check daily quota limits.
         if self._settings.enable_daily_limit:
             requested_count = max(1, requested_count)
             today = self._today()
@@ -174,7 +171,7 @@ class UsageManager:
         is_admin: bool = False,
         count: int = 1,
     ) -> None:
-        """记录用户使用次数。"""
+        """Record generated image usage for one user."""
         if not self._settings.enable_daily_limit:
             return
 
@@ -251,14 +248,14 @@ class UsageManager:
         )
 
     def get_usage_count(self, user_id: str) -> int:
-        """获取用户今日使用次数。"""
+        """Return today's usage count for one user."""
         today = self._today()
         return self._usage_data.get(today, {}).get(user_id, 0)
 
     def get_daily_limit(self) -> int:
-        """获取每日限制次数。"""
+        """Return the configured daily limit."""
         return self._settings.daily_limit_count
 
     def is_daily_limit_enabled(self) -> bool:
-        """是否启用每日限制。"""
+        """Return whether the daily limit is enabled."""
         return self._settings.enable_daily_limit

@@ -29,6 +29,7 @@ from ..generation.reference_collector import (
 )
 from ..tasks.ids import new_task_id
 from ..config.templates import (
+    build_generation_prompt,
     find_named_entry,
     format_template_summary,
     normalize_name_items,
@@ -39,6 +40,11 @@ from ..shared.types import ImageCapability, ImageData
 LOG = log_prefix("PublicAPI")
 DEFAULT_SOURCE = "公共接口"
 DEFAULT_WAIT_POLL_INTERVAL_SECONDS = 0.5
+TASK_CREATION_ERROR_CODES = {
+    PublicAPIResultCode.QUEUE_FULL.value: PublicAPIResultCode.QUEUE_FULL,
+    PublicAPIResultCode.TASK_MANAGER_CLOSED.value: PublicAPIResultCode.TASK_MANAGER_CLOSED,
+    PublicAPIResultCode.TASK_ID_CONFLICT.value: PublicAPIResultCode.TASK_ID_CONFLICT,
+}
 
 
 class ImageGenerationPublicAPI:
@@ -80,7 +86,7 @@ class ImageGenerationPublicAPI:
         scope = str(unified_msg_origin or "").strip()
         use_usage_scope = bool(scope)
         safe_is_admin = bool(is_admin) if use_usage_scope else False
-        task_id = self._new_task_id()
+        task_id = new_task_id()
 
         requested_count = plugin.normalize_image_count(
             image_count
@@ -152,7 +158,7 @@ class ImageGenerationPublicAPI:
         if rejection := plugin.task_manager.get_generation_queue_rejection():
             code, message = rejection
             return self._submit_error(
-                self._task_creation_error_code(code),
+                TASK_CREATION_ERROR_CODES.get(code, PublicAPIResultCode.REJECTED),
                 message,
                 error=code,
             )
@@ -190,7 +196,7 @@ class ImageGenerationPublicAPI:
                 request_source=request_source,
             )
 
-            preset_summary, preset_label = self._format_template_summary(
+            preset_summary, preset_label = format_template_summary(
                 matched_presets,
                 matched_personas,
             )
@@ -225,7 +231,7 @@ class ImageGenerationPublicAPI:
             # create_generation_task() rolls back quota reservation on creation failure.
             usage_reserved = False
             return self._submit_error(
-                self._task_creation_error_code(exc.code),
+                TASK_CREATION_ERROR_CODES.get(exc.code, PublicAPIResultCode.REJECTED),
                 exc.message,
                 error=exc.code,
             )
@@ -445,15 +451,6 @@ class ImageGenerationPublicAPI:
             error=error or message,
         )
 
-    def _task_creation_error_code(self, code: str) -> PublicAPIResultCode:
-        if code == PublicAPIResultCode.QUEUE_FULL.value:
-            return PublicAPIResultCode.QUEUE_FULL
-        if code == PublicAPIResultCode.TASK_MANAGER_CLOSED.value:
-            return PublicAPIResultCode.TASK_MANAGER_CLOSED
-        if code == PublicAPIResultCode.TASK_ID_CONFLICT.value:
-            return PublicAPIResultCode.TASK_ID_CONFLICT
-        return PublicAPIResultCode.REJECTED
-
     def _snapshot(
         self,
         record: GenerationTaskRecord,
@@ -497,23 +494,6 @@ class ImageGenerationPublicAPI:
             cancelled_request_count=request_stats["cancelled"],
         )
 
-    def _new_task_id(self) -> str:
-        return new_task_id()
-
-    def _normalize_name_items(self, raw: Any) -> list[str]:
-        return normalize_name_items(raw)
-
-    def _find_named_entry(self, entries: dict[str, Any], token: str) -> str | None:
-        return find_named_entry(entries, token)
-
-    def _parse_preset_prompt(
-        self,
-        preset_content: Any,
-        aspect_ratio: str,
-        resolution: str,
-    ) -> tuple[str, str, str]:
-        return parse_preset_prompt(preset_content, aspect_ratio, resolution)
-
     def _build_prompt(
         self,
         *,
@@ -531,14 +511,15 @@ class ImageGenerationPublicAPI:
         list[tuple[str, str]],
         str | None,
     ]:
-        prompt_parts: list[str] = []
+        preset_prompts: list[str] = []
+        persona_prompts: list[str] = []
         matched_presets: list[str] = []
         matched_personas: list[str] = []
         persona_images: list[tuple[str, str]] = []
         config_manager = self._plugin.config_manager
 
-        for preset_name in self._normalize_name_items(presets):
-            matched_preset = self._find_named_entry(
+        for preset_name in normalize_name_items(presets):
+            matched_preset = find_named_entry(
                 config_manager.presets,
                 preset_name,
             )
@@ -552,17 +533,17 @@ class ImageGenerationPublicAPI:
                     [],
                     f"预设不存在: {preset_name}",
                 )
-            preset_prompt, aspect_ratio, resolution = self._parse_preset_prompt(
+            preset_prompt, aspect_ratio, resolution = parse_preset_prompt(
                 config_manager.presets[matched_preset],
                 aspect_ratio,
                 resolution,
             )
             if preset_prompt:
-                prompt_parts.append(preset_prompt)
+                preset_prompts.append(preset_prompt)
             matched_presets.append(matched_preset)
 
-        for persona_name in self._normalize_name_items(personas):
-            matched_persona = self._find_named_entry(
+        for persona_name in normalize_name_items(personas):
+            matched_persona = find_named_entry(
                 config_manager.personas,
                 persona_name,
             )
@@ -579,14 +560,16 @@ class ImageGenerationPublicAPI:
             persona = config_manager.personas[matched_persona]
             persona_prompt = persona.prompt.strip()
             if persona_prompt:
-                prompt_parts.append(persona_prompt)
+                persona_prompts.append(persona_prompt)
             if persona.image:
                 persona_images.append((matched_persona, persona.image))
             matched_personas.append(matched_persona)
 
-        if extra_prompt := str(prompt or "").strip():
-            prompt_parts.append(extra_prompt)
-        final_prompt = " ".join(part for part in prompt_parts if part).strip()
+        final_prompt = build_generation_prompt(
+            preset_prompts=preset_prompts,
+            persona_prompts=persona_prompts,
+            extra_prompt=str(prompt or ""),
+        )
         return (
             final_prompt,
             aspect_ratio,
@@ -596,13 +579,6 @@ class ImageGenerationPublicAPI:
             persona_images,
             None,
         )
-
-    def _format_template_summary(
-        self,
-        matched_presets: list[str],
-        matched_personas: list[str],
-    ) -> tuple[str | None, str]:
-        return format_template_summary(matched_presets, matched_personas)
 
     async def _collect_reference_images(
         self,

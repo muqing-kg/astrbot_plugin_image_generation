@@ -375,8 +375,8 @@ class LLMResultHandler:
             await self._send_fallback(record, reason="无法构建主 Agent")
             return
 
-        # build_main_agent 会按人设/插件设置合并默认工具；这里在 reset 前裁剪，
-        # 确保本次主动唤醒只允许 AI 使用 send_message_to_user 交付结果。
+        # build_main_agent merges default tools from persona/plugin settings.
+        # Trim tools before reset so this proactive turn can only deliver results.
         result.provider_request.func_tool = ToolSet()
         result.provider_request.func_tool.add_tool(
             self.context.get_llm_tool_manager().get_builtin_tool(SendMessageToUserTool)

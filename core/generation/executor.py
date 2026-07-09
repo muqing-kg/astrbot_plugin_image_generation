@@ -115,7 +115,11 @@ class GenerationExecutor:
 
         capabilities = self.generator.adapter.get_capabilities()
         task_log = log_prefix("Task", task_id)
-        image_count = self._normalize_image_count(image_count)
+        try:
+            image_count = int(image_count)
+        except (TypeError, ValueError):
+            image_count = self.config_manager.default_image_count
+        image_count = max(1, min(image_count, self.config_manager.max_image_count))
         if not (capabilities & ImageCapability.IMAGE_TO_IMAGE) and images_data:
             logger.warning(
                 f"{task_log} 当前适配器不支持参考图，已忽略 {len(images_data)} 张图片"
@@ -175,10 +179,7 @@ class GenerationExecutor:
                 deliver_via_ai,
                 auto_send,
             )
-        except asyncio.CancelledError:
-            self.release_generation_task_quota_once(task_id)
-            raise
-        except Exception:
+        except (asyncio.CancelledError, Exception):
             self.release_generation_task_quota_once(task_id)
             raise
 
@@ -226,14 +227,6 @@ class GenerationExecutor:
         )
         self.task_manager.mark_generation_task_quota_settled(task_id)
 
-    def _normalize_image_count(self, value: int) -> int:
-        """Normalize requested image count using configured bounds."""
-        try:
-            count = int(value)
-        except (TypeError, ValueError):
-            count = self.config_manager.default_image_count
-        return max(1, min(count, self.config_manager.max_image_count))
-
     async def _do_generate_and_send(
         self,
         prompt: str,
@@ -250,6 +243,7 @@ class GenerationExecutor:
         """Execute generation logic and deliver results."""
         start_time = time.time()
         task_log = log_prefix("Task", task_id)
+        skip_direct_delivery = deliver_via_ai or not auto_send or not unified_msg_origin
         if not self.generator:
             logger.warning(f"{task_log} 生成器未初始化，跳过生成请求")
             self.task_manager.mark_generation_task_failed(task_id, "生图生成器未初始化")
@@ -277,7 +271,7 @@ class GenerationExecutor:
         if not generated_file_paths:
             error = "; ".join(errors) or "模型未返回图片"
             self.task_manager.mark_generation_task_failed(task_id, error)
-            if deliver_via_ai or not auto_send or not unified_msg_origin:
+            if skip_direct_delivery:
                 return
             await self.context.send_message(
                 unified_msg_origin,
@@ -304,7 +298,7 @@ class GenerationExecutor:
                 task_id,
                 f"图片内容审核未通过: {image_reason}",
             )
-            if deliver_via_ai or not auto_send or not unified_msg_origin:
+            if skip_direct_delivery:
                 return
             await self.context.send_message(
                 unified_msg_origin,
@@ -321,7 +315,7 @@ class GenerationExecutor:
             actual_count=len(generated_file_paths),
         )
 
-        if deliver_via_ai or not auto_send or not unified_msg_origin:
+        if skip_direct_delivery:
             self.task_manager.mark_generation_task_succeeded(
                 task_id,
                 result_count=len(generated_file_paths),
