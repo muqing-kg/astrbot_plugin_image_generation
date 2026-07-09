@@ -109,7 +109,7 @@ class SafetyAuditor:
         if not append_prompt_if_missing_placeholder or not prompt:
             return review_prompt
 
-        # 兼容旧的提示词审核配置：即使没有占位符，也会附加当前提示词给审核模型。
+        # Preserve legacy prompt-audit configs by appending the prompt when no placeholder exists.
         return f"{review_prompt}\n\n用户提示词：\n{prompt}"
 
     def _format_prompt_placeholder(self, template: str, prompt: str) -> str:

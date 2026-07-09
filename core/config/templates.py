@@ -14,6 +14,46 @@ from .models import PersonaTemplate
 LOG = log_prefix("Config")
 
 
+def build_generation_prompt(
+    *,
+    preset_prompts: list[str] | None = None,
+    persona_prompts: list[str] | None = None,
+    extra_prompt: str = "",
+) -> str:
+    """Build a structured generation prompt from multiple sources.
+
+    Args:
+        preset_prompts: Prompt fragments from matched presets.
+        persona_prompts: Prompt fragments from matched personas.
+        extra_prompt: User-provided prompt for the current request.
+
+    Returns:
+        Original text for single-source prompts, otherwise a lightweight
+        sectioned prompt that keeps source intent clear for the model.
+    """
+    preset_parts = [part.strip() for part in preset_prompts or [] if part.strip()]
+    persona_parts = [part.strip() for part in persona_prompts or [] if part.strip()]
+    extra_text = str(extra_prompt or "").strip()
+
+    sections: list[tuple[str, list[str]]] = []
+    if persona_parts:
+        sections.append(("人物设定", persona_parts))
+    if preset_parts:
+        sections.append(("预设提示词", preset_parts))
+    if extra_text:
+        sections.append(("附加提示词", [extra_text]))
+
+    if not sections:
+        return ""
+    if len(sections) == 1 and len(sections[0][1]) == 1:
+        return sections[0][1][0]
+
+    blocks: list[str] = []
+    for title, parts in sections:
+        blocks.append(f"[{title}]\n" + "\n".join(parts))
+    return "\n\n".join(blocks).strip()
+
+
 def normalize_name_items(raw: Any) -> list[str]:
     """Normalize one or many preset/persona names from tool arguments."""
     names: list[str] = []
@@ -92,7 +132,7 @@ class ConfigTemplateStoreMixin:
     """Mixin for reading and writing preset/persona template config."""
 
     def _load_presets(self, presets_config: list[Any]) -> dict[str, Any]:
-        """加载预设配置。"""
+        """Load configured prompt presets."""
         presets: dict[str, Any] = {}
         if not isinstance(presets_config, list):
             return presets
@@ -122,7 +162,7 @@ class ConfigTemplateStoreMixin:
         self._config.save_config()
 
     def _load_personas(self, personas_config: Any) -> dict[str, PersonaTemplate]:
-        """加载人设模板配置。"""
+        """Load configured persona templates."""
         personas: dict[str, PersonaTemplate] = {}
         if not isinstance(personas_config, list):
             return personas
@@ -143,7 +183,7 @@ class ConfigTemplateStoreMixin:
         return personas
 
     def _parse_file_value(self, raw: Any) -> str:
-        """从 file 配置值中提取首个可用文件路径或 URL。"""
+        """Extract the first usable file path or URL from a file config value."""
         if isinstance(raw, str):
             return raw.strip()
         if isinstance(raw, list):
@@ -158,12 +198,12 @@ class ConfigTemplateStoreMixin:
         return ""
 
     def save_preset(self, name: str, content: str) -> None:
-        """保存预设。"""
+        """Save a prompt preset."""
         self._plugin_config.presets[name] = content
         self._save_presets_config()
 
     def delete_preset(self, name: str) -> bool:
-        """删除预设，返回是否成功。"""
+        """Delete a prompt preset and return whether it existed."""
         if name in self._plugin_config.presets:
             del self._plugin_config.presets[name]
             self._save_presets_config()
@@ -172,6 +212,7 @@ class ConfigTemplateStoreMixin:
 
 
 __all__ = (
+    "build_generation_prompt",
     "ConfigTemplateStoreMixin",
     "find_named_entry",
     "format_template_summary",

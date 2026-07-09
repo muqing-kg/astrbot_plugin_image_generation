@@ -1,7 +1,4 @@
-"""
-Adapter module for image generation plugin
-图像生成插件的适配器模块
-"""
+"""Adapter module for the image generation plugin."""
 
 from .agnes_ai_adapter import AgnesAIAdapter
 from .custom_http_adapter import CustomHTTPAdapter

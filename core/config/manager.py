@@ -1,6 +1,4 @@
-"""
-插件配置管理模块
-"""
+"""Plugin configuration management module."""
 
 from __future__ import annotations
 
@@ -80,17 +78,19 @@ LOG = log_prefix("Config")
 
 
 class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
-    """插件配置管理器。"""
+    """Plugin configuration manager."""
 
     def __init__(self, config: AstrBotConfig):
         self._config = config
         self._config_validator = ConfigValidator(getattr(config, "schema", None))
         self._plugin_config: PluginConfig = PluginConfig()
-        self._all_provider_configs: list[AdapterConfig] = []  # 保存所有供应商配置
+        self._all_provider_configs: list[
+            AdapterConfig
+        ] = []  # Store all provider configs.
         self.load()
 
     def load(self) -> PluginConfig:
-        """加载并解析插件配置。"""
+        """Load and parse plugin configuration."""
         self._validate_config_values()
 
         gen_cfg = self._get_config_section("generation")
@@ -323,7 +323,7 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
         )
 
     def reload(self) -> PluginConfig:
-        """重新加载配置。"""
+        """Reload plugin configuration."""
         return self.load()
 
     def _validate_config_values(self) -> None:
@@ -444,43 +444,43 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
         return self._parse_string_list(raw)
 
     def save_model_setting(self, model: str) -> None:
-        """保存模型设置。"""
+        """Save the active model setting."""
         self._config.setdefault("generation", {})["model"] = model
         self._config.save_config()
 
-    # ---------------------- 便捷属性访问 ----------------------
+    # Convenience property accessors.
     @property
     def adapter_config(self) -> AdapterConfig | None:
-        """获取适配器配置。"""
+        """Return the active adapter configuration."""
         return self._plugin_config.adapter_config
 
     @property
     def presets(self) -> dict[str, Any]:
-        """获取预设字典。"""
+        """Return configured prompt presets."""
         return self._plugin_config.presets
 
     @property
     def personas(self) -> dict[str, PersonaTemplate]:
-        """获取人设模板字典。"""
+        """Return configured persona templates."""
         return self._plugin_config.personas
 
     def is_llm_tool_enabled(self, tool_name: str) -> bool:
-        """检查指定 LLM 工具是否启用。"""
+        """Return whether an LLM tool is enabled."""
         return tool_name in self._plugin_config.enabled_llm_tools
 
     @property
     def default_aspect_ratio(self) -> str:
-        """默认宽高比。"""
+        """Return the default aspect ratio."""
         return self._plugin_config.generation_settings.default_aspect_ratio
 
     @property
     def default_resolution(self) -> str:
-        """默认分辨率。"""
+        """Return the default resolution."""
         return self._plugin_config.generation_settings.default_resolution
 
     @property
     def default_image_count(self) -> int:
-        """默认单次生成图片数量。"""
+        """Return the default image count per request."""
         return min(
             self._plugin_config.generation_settings.default_image_count,
             self.max_image_count,
@@ -488,82 +488,82 @@ class ConfigManager(ConfigProviderParserMixin, ConfigTemplateStoreMixin):
 
     @property
     def max_image_count(self) -> int:
-        """单次最大生成图片数量。"""
+        """Return the maximum image count per request."""
         return self._plugin_config.generation_settings.max_image_count
 
     @property
     def max_images_per_message(self) -> int:
-        """单条消息最多发送的图片数量。"""
+        """Return the maximum number of images sent per message."""
         return self._plugin_config.generation_settings.max_images_per_message
 
     @property
     def max_concurrent_tasks(self) -> int:
-        """最大并发生图请求数。"""
+        """Return the maximum concurrent adapter requests."""
         return self._plugin_config.generation_settings.max_concurrent_tasks
 
     @property
     def max_running_generation_tasks(self) -> int:
-        """最大并发完整生图任务数。"""
+        """Return the maximum number of concurrently running generation tasks."""
         return self._plugin_config.generation_settings.max_running_generation_tasks
 
     @property
     def max_queued_generation_tasks(self) -> int:
-        """最大排队完整生图任务数。"""
+        """Return the maximum number of queued generation tasks."""
         return self._plugin_config.generation_settings.max_queued_generation_tasks
 
     @property
     def enable_generation_task_history(self) -> bool:
-        """是否持久化生图任务历史。"""
+        """Return whether generation task history persistence is enabled."""
         return self._plugin_config.generation_settings.enable_generation_task_history
 
     @property
     def generation_task_history_limit(self) -> int:
-        """生图任务历史保留条数。"""
+        """Return the generation task history item limit."""
         return self._plugin_config.generation_settings.generation_task_history_limit
 
     @property
     def generation_task_history_retention_days(self) -> int:
-        """生图任务历史保留天数。"""
+        """Return generation task history retention days."""
         return self._plugin_config.generation_settings.generation_task_history_retention_days
 
     @property
     def result_info_items(self) -> set[str]:
-        """生图成功后要展示的结果信息项。"""
+        """Return result metadata items shown after successful generation."""
         return self._plugin_config.generation_settings.result_info_items
 
     def should_show_result_info(self, item: str) -> bool:
-        """检查指定结果信息项是否启用。"""
+        """Return whether one result metadata item is enabled."""
         return item in self.result_info_items
 
     @property
     def start_task_message_template(self) -> str:
-        """开始生图任务提示模板。"""
+        """Return the start-task message template."""
         return self._plugin_config.generation_settings.start_task_message_template
 
     @property
     def show_user_error_details(self) -> bool:
-        """是否向用户展示详细错误信息。"""
+        """Return whether detailed user-facing errors are enabled."""
         return self._plugin_config.generation_settings.show_user_error_details
 
     @property
     def usage_settings(self) -> UsageSettings:
-        """用户使用限制设置。"""
+        """Return usage limit settings."""
         return self._plugin_config.usage_settings
 
     @property
     def safety_audit_settings(self) -> SafetyAuditSettings:
-        """安全审核设置。"""
+        """Return safety audit settings."""
         return self._plugin_config.safety_audit_settings
 
-    # ---------------------- 供应商查询方法 ----------------------
+    # Provider lookup helpers.
     def get_provider_config(self, adapter_type: AdapterType) -> AdapterConfig | None:
-        """获取指定类型的供应商配置。
+        """Return provider configuration for one adapter type.
 
         Args:
-            adapter_type: 要获取的适配器类型。
+            adapter_type: Adapter type to look up.
 
         Returns:
-            匹配的供应商配置，如果没有则返回 None。
+            Matching provider config, or None when unavailable.
         """
         for cfg in self._all_provider_configs:
             if cfg.type == adapter_type:

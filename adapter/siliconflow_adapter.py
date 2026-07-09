@@ -17,7 +17,7 @@ from ..core.shared.types import GenerationRequest, ImageCapability, ImageData
 
 
 class SiliconFlowAdapter(BaseImageAdapter):
-    """SiliconFlow 图像生成适配器。"""
+    """SiliconFlow image generation adapter."""
 
     DEFAULT_BASE_URL = SILICONFLOW_DEFAULT_BASE_URL
 
@@ -48,13 +48,13 @@ class SiliconFlowAdapter(BaseImageAdapter):
     }
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
         payload = self._build_payload(request)
         session = self._get_session()
@@ -96,7 +96,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
             return None, safe_log_error_body(exc)
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
-        """构建 SiliconFlow 图片生成请求。"""
+        """Build the SiliconFlow image generation request payload."""
         payload: dict[str, Any] = {
             "model": self._model_name(),
             "prompt": request.prompt,
@@ -115,7 +115,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
         return payload
 
     def _add_extra_options(self, payload: dict[str, Any]) -> None:
-        """添加 SiliconFlow 可选生图参数。"""
+        """Add optional SiliconFlow generation parameters."""
         extra = self.config.extra
 
         if negative_prompt := str(extra.get("negative_prompt") or "").strip():
@@ -134,7 +134,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
             payload["guidance_scale"] = guidance_scale
 
     def _resolve_image_size(self, request: GenerationRequest) -> str | None:
-        """按模型和宽高比解析 SiliconFlow image_size。"""
+        """Resolve SiliconFlow image_size from model and aspect ratio."""
         if not request.aspect_ratio or request.aspect_ratio == UNSPECIFIED_OPTION:
             return None
         aspect_ratio = request.aspect_ratio
@@ -146,7 +146,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
     def _add_images(
         self, payload: dict[str, Any], images: list[ImageData], task_id: str | None
     ) -> None:
-        """将参考图添加为 SiliconFlow 支持的 data URL。"""
+        """Add reference images as SiliconFlow-supported data URLs."""
         max_images = 3 if self._is_qwen_edit_model() else 1
         if len(images) > max_images:
             logger.debug(
@@ -162,7 +162,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict[str, Any], task_id: str | None = None
     ) -> tuple[list[bytes] | None, str | None]:
-        """从 SiliconFlow 响应中提取并下载图片。"""
+        """Extract and download image bytes from a SiliconFlow response."""
         prefix = self._get_log_prefix(task_id)
         image_items = response.get("images")
         if not isinstance(image_items, list):
@@ -204,7 +204,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
     async def _download_image(
         self, url: str, task_id: str | None = None
     ) -> bytes | None:
-        """下载 SiliconFlow 返回的临时图片 URL。"""
+        """Download a temporary image URL returned by SiliconFlow."""
         prefix = self._get_log_prefix(task_id)
         try:
             async with self._get_session().get(
@@ -220,7 +220,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
         return None
 
     def _decode_data_url(self, url: str, task_id: str | None = None) -> bytes | None:
-        """解码 data URL 图片。"""
+        """Decode an image data URL."""
         if ";base64," not in url:
             return None
         try:
@@ -232,20 +232,20 @@ class SiliconFlowAdapter(BaseImageAdapter):
             return None
 
     def _is_qwen_image_model(self) -> bool:
-        """判断当前模型是否为 Qwen-Image 系列。"""
+        """Return whether the active model is in the Qwen-Image family."""
         return "qwen-image" in self._model_name().lower()
 
     def _is_qwen_edit_model(self) -> bool:
-        """判断当前模型是否为 Qwen 图片编辑模型。"""
+        """Return whether the active model is a Qwen image editing model."""
         model = self._model_name().lower()
         return "qwen-image-edit" in model
 
     def _model_name(self) -> str:
-        """获取当前模型名称。"""
+        """Return the active model name."""
         return self.model or "Kwai-Kolors/Kolors"
 
     def _coerce_int(self, value: Any, *, min_value: int, max_value: int) -> int | None:
-        """安全转换整数配置。"""
+        """Safely coerce an integer setting."""
         if value in (None, "") or isinstance(value, bool):
             return None
         try:
@@ -257,7 +257,7 @@ class SiliconFlowAdapter(BaseImageAdapter):
     def _coerce_float(
         self, value: Any, *, min_value: float, max_value: float
     ) -> float | None:
-        """安全转换浮点数配置。"""
+        """Safely coerce a float setting."""
         if value in (None, "") or isinstance(value, bool):
             return None
         try:

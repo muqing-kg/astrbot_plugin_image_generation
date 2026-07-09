@@ -72,13 +72,13 @@ class TaskSchedulerMixin:
         interval_seconds: float,
         run_immediately: bool = True,
     ) -> None:
-        """启动一个周期性的定时任务。
+        """Start a periodic loop task.
 
         Args:
-            name: 任务名称，用于唯一标识和日志记录。
-            coro_func: 返回协程的函数（任务的主逻辑）。
-            interval_seconds: 执行间隔（秒）。
-            run_immediately: 是否在启动时立即执行一次。
+            name: Unique task name used for tracking and logs.
+            coro_func: Function that returns the task coroutine.
+            interval_seconds: Run interval in seconds.
+            run_immediately: Whether to run once immediately after startup.
         """
         if name in self._loop_tasks:
             self.stop_loop_task(name)
@@ -114,14 +114,14 @@ class TaskSchedulerMixin:
         logger.debug(f"{LOG} 定时任务 {log_name} 已启动 (间隔: {interval_seconds}s)")
 
     def stop_loop_task(self, name: str) -> None:
-        """停止指定的定时任务。"""
+        """Stop one loop task."""
         if task := self._loop_tasks.pop(name, None):
             if not task.done():
                 task.cancel()
             logger.debug(f"{LOG} 定时任务 {_task_name(name)} 已停止")
 
     def _on_loop_task_done(self, name: str, task: asyncio.Task) -> None:
-        """定时任务结束时的回调。"""
+        """Handle loop task completion."""
         self.background_tasks.discard(task)
         self._loop_tasks.pop(name, None)
 
@@ -130,19 +130,19 @@ class TaskSchedulerMixin:
         name: str,
         coro_func: Callable[[], Coroutine[Any, Any, Any]],
     ) -> None:
-        """注册一个启动时执行的任务。
+        """Register a task to run during startup.
 
         Args:
-            name: 任务名称，用于日志记录。
-            coro_func: 返回协程的函数（任务的主逻辑）。
+            name: Task name used for logs.
+            coro_func: Function that returns the task coroutine.
         """
         self._startup_tasks.append((name, coro_func))
         logger.debug(f"{LOG} 已注册启动任务: {_task_name(name)}")
 
     async def run_startup_tasks(self) -> None:
-        """执行所有注册的启动任务。
+        """Run all registered startup tasks.
 
-        此方法应在插件初始化完成后调用一次。
+        This should be called once after plugin initialization is complete.
         """
         if self._startup_completed:
             logger.warning(f"{LOG} 启动任务已执行过，跳过重复执行")
@@ -175,13 +175,13 @@ class TaskSchedulerMixin:
         check_interval_seconds: float = 60.0,
         run_immediately: bool = False,
     ) -> None:
-        """启动一个每日任务，在日期变更时执行。
+        """Start a daily task that runs when the date changes.
 
         Args:
-            name: 任务名称，用于唯一标识和日志记录。
-            coro_func: 返回协程的函数（任务的主逻辑）。
-            check_interval_seconds: 检查日期变更的间隔（秒），默认 60 秒。
-            run_immediately: 是否在启动时立即执行一次（无论日期）。
+            name: Unique task name used for tracking and logs.
+            coro_func: Function that returns the task coroutine.
+            check_interval_seconds: Date-change check interval in seconds.
+            run_immediately: Whether to run once immediately regardless of date.
         """
         if name in self._daily_tasks:
             self.stop_daily_task(name)
@@ -189,7 +189,7 @@ class TaskSchedulerMixin:
         log_name = _task_name(name)
 
         async def _daily_loop():
-            # 初始化上次执行日期
+            # Initialize the last run date.
             if run_immediately:
                 try:
                     await coro_func()
@@ -201,7 +201,7 @@ class TaskSchedulerMixin:
                         exc_info=True,
                     )
             else:
-                # 记录当前日期，避免启动当天重复执行
+                # Store today's date to avoid duplicate runs on startup day.
                 self._last_run_dates[name] = datetime.now().strftime("%Y-%m-%d")
 
             while True:
@@ -240,7 +240,7 @@ class TaskSchedulerMixin:
         )
 
     def stop_daily_task(self, name: str) -> None:
-        """停止指定的每日任务。"""
+        """Stop one daily task."""
         if task := self._daily_tasks.pop(name, None):
             if not task.done():
                 task.cancel()
@@ -248,13 +248,13 @@ class TaskSchedulerMixin:
             logger.debug(f"{LOG} 每日任务 {_task_name(name)} 已停止")
 
     def _on_daily_task_done(self, name: str, task: asyncio.Task) -> None:
-        """每日任务结束时的回调。"""
+        """Handle daily task completion."""
         self.background_tasks.discard(task)
         self._daily_tasks.pop(name, None)
         self._last_run_dates.pop(name, None)
 
     async def cancel_all(self):
-        """取消所有正在运行的任务。"""
+        """Cancel all running tasks."""
         self._accepting_generation_tasks = False
         self._generation_shutdown = True
 

@@ -40,7 +40,7 @@ BASE64_VALUE_RE = re.compile(r"^[A-Za-z0-9+/=\s]+$")
 
 
 class BaseImageAdapter(abc.ABC):
-    """图像生成适配器基类。"""
+    """Base class for image generation adapters."""
 
     requires_api_key = True
 
@@ -67,10 +67,10 @@ class BaseImageAdapter(abc.ABC):
 
     @abc.abstractmethod
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
 
     def _get_configured_capabilities(self) -> ImageCapability:
-        """根据配置项构建适配器能力。"""
+        """Build adapter capabilities from configuration options."""
         capability_map: dict[str, ImageCapability] = {
             "text_to_image": ImageCapability.TEXT_TO_IMAGE,
             "image_to_image": ImageCapability.IMAGE_TO_IMAGE,
@@ -85,30 +85,30 @@ class BaseImageAdapter(abc.ABC):
         return result
 
     async def close(self) -> None:
-        """关闭底层的 HTTP 会话。"""
+        """Close the underlying HTTP session."""
 
         if self._session and not self._session.closed:
             await self._session.close()
         self._session = None
 
     def _get_session(self) -> aiohttp.ClientSession:
-        """获取或创建 HTTP 会话。"""
+        """Return or create the HTTP session."""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
 
     def _get_current_api_key(self) -> str:
-        """获取当前使用的 API Key。"""
+        """Return the current API key."""
         if not self.api_keys:
             return ""
         return self.api_keys[self.current_key_index % len(self.api_keys)]
 
     def _get_masked_api_key(self) -> str:
-        """获取脱敏后的当前 API Key，用于日志输出。"""
+        """Return the masked current API key for logs."""
         return mask_sensitive(self._get_current_api_key())
 
     def _get_log_prefix(self, task_id: str | None = None) -> str:
-        """获取统一的日志前缀。"""
+        """Return the adapter log prefix."""
         adapter_name = self.__class__.__name__.replace("Adapter", "")
         return log_prefix(adapter_name, task_id)
 
@@ -266,17 +266,17 @@ class BaseImageAdapter(abc.ABC):
         return message
 
     def _get_timeout(self) -> aiohttp.ClientTimeout:
-        """获取统一的请求超时配置。"""
+        """Return the request timeout configuration."""
         return aiohttp.ClientTimeout(total=self.timeout)
 
     def _get_download_timeout(self) -> aiohttp.ClientTimeout:
-        """获取统一的下载超时配置。"""
+        """Return the download timeout configuration."""
         return aiohttp.ClientTimeout(total=self.download_timeout)
 
     def _log_debug_json(
         self, label: str, value: Any, task_id: str | None = None
     ) -> None:
-        """按需输出 JSON 调试日志，长字符串会摘要避免刷屏。"""
+        """Log JSON debug data when enabled, compacting long strings."""
         if not self.debug_request_logging:
             return
 
@@ -291,7 +291,7 @@ class BaseImageAdapter(abc.ABC):
         logger.debug(f"{prefix} {label} JSON: {json_text}")
 
     def _sanitize_debug_json(self, value: Any, field_name: str | None = None) -> Any:
-        """保留 JSON 结构，同时截断图片 Base64 和其他超长字符串。"""
+        """Preserve JSON structure while truncating image Base64 and long strings."""
         if field_name and is_sensitive_log_field(field_name):
             return mask_sensitive(value)
         if isinstance(value, dict):
@@ -313,7 +313,7 @@ class BaseImageAdapter(abc.ABC):
         return value
 
     def _sanitize_debug_string(self, value: str) -> str:
-        """截断调试 JSON 中可能撑爆日志的字符串值。"""
+        """Truncate strings that could flood debug JSON logs."""
         if len(value) <= DEBUG_JSON_STRING_LIMIT:
             return value
 
@@ -333,7 +333,7 @@ class BaseImageAdapter(abc.ABC):
     def _log_debug_json_text(
         self, label: str, value: str, task_id: str | None = None
     ) -> None:
-        """当文本响应可解析为 JSON 时按需输出 JSON 调试日志。"""
+        """Log text responses as JSON debug data when they can be parsed."""
         if not self.debug_request_logging:
             return
 
@@ -346,13 +346,13 @@ class BaseImageAdapter(abc.ABC):
     async def _read_response_json(
         self, response: aiohttp.ClientResponse, task_id: str | None = None
     ) -> Any:
-        """读取响应 JSON，并在开关开启时输出安全摘要后的响应体。"""
+        """Read response JSON and log a safe debug summary when enabled."""
         data = await response.json()
         self._log_debug_json("响应", data, task_id)
         return data
 
     def _rotate_api_key(self) -> None:
-        """轮换 API Key。"""
+        """Rotate to the next API key."""
         if len(self.api_keys) > 1:
             self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
             logger.debug(
@@ -360,14 +360,14 @@ class BaseImageAdapter(abc.ABC):
             )
 
     def update_model(self, model: str) -> None:
-        """更新使用的模型。"""
+        """Update the active model."""
         self.model = model
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        """带重试逻辑的图像生成模板方法。
+        """Run the image generation template method with retry logic.
 
-        子类应重写 `_generate_once()` 方法来实现具体的生成逻辑。
-        如需在生成前进行预处理验证，可重写 `_pre_generate()` 方法。
+        Subclasses implement provider-specific logic in `_generate_once()`.
+        Override `_pre_generate()` when provider-specific prechecks are needed.
         """
         if self.requires_api_key and not self.api_keys:
             return GenerationResult(images=None, error="未配置 API Key")
@@ -383,7 +383,7 @@ class BaseImageAdapter(abc.ABC):
             )
         )
 
-        # 预处理检查（子类可重写）
+        # Run provider-specific prechecks when implemented by subclasses.
         pre_result = self._pre_generate(request)
         if pre_result is not None:
             logger.warning(
@@ -430,7 +430,7 @@ class BaseImageAdapter(abc.ABC):
                 return GenerationResult(images=None, error=last_error)
             if attempt < self.max_retry_attempts - 1:
                 self._rotate_api_key()
-                # 轮换 Key 时进行指数退避
+                # Apply exponential backoff after rotating through all keys.
                 if (attempt + 1) % max(1, len(self.api_keys)) == 0:
                     await asyncio.sleep(
                         min(2 ** ((attempt + 1) // len(self.api_keys)), 10)
@@ -470,10 +470,10 @@ class BaseImageAdapter(abc.ABC):
             return None
 
     def _pre_generate(self, _request: GenerationRequest) -> GenerationResult | None:
-        """生成前的预处理检查。
+        """Run pre-generation validation.
 
-        子类可重写此方法进行参数验证。
-        返回 None 表示通过检查，返回 GenerationResult 表示提前返回错误。
+        Returns:
+            None when validation passes, otherwise a result to return early.
         """
         return None
 
@@ -481,8 +481,8 @@ class BaseImageAdapter(abc.ABC):
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生成请求。
+        """Execute one provider-specific generation request.
 
-        子类必须实现此方法。
-        返回 (images, error) 元组，成功时 images 非空，失败时 error 非空。
+        Returns:
+            A tuple of generated images and an error message.
         """

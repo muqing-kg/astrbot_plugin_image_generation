@@ -14,14 +14,14 @@ from ..generation.image_utils import convert_images_batch
 
 
 class ImageGenerator:
-    """适配器编排器，负责分发生图请求。"""
+    """Adapter orchestrator for dispatching image generation requests."""
 
     def __init__(self, adapter_config: AdapterConfig):
         self.adapter_config = adapter_config
         self.adapter = self._create_adapter(adapter_config)
 
     def _create_adapter(self, config: AdapterConfig):
-        """根据配置创建对应的适配器。"""
+        """Create an adapter instance from configuration."""
         from ...adapter import (
             AgnesAIAdapter,
             CustomHTTPAdapter,
@@ -54,7 +54,7 @@ class ImageGenerator:
         return adapter_cls(config)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        """执行生图逻辑。"""
+        """Generate images for one request."""
         if not self.adapter:
             return GenerationResult(images=None, error="适配器未初始化")
 
@@ -120,14 +120,14 @@ class ImageGenerator:
             return GenerationResult(images=None, error=str(exc))
 
     def update_model(self, model: str) -> None:
-        """更新适配器使用的模型。"""
+        """Update the model used by the active adapter."""
         if self.adapter:
             self.adapter.update_model(model)
 
     async def update_adapter(self, adapter_config: AdapterConfig) -> None:
-        """更新适配器配置并重新创建适配器。
+        """Update adapter configuration and recreate the adapter.
 
-        注意: 此方法会关闭旧适配器以释放资源。
+        The previous adapter is closed to release resources.
         """
         if self.adapter:
             await self.adapter.close()
@@ -135,6 +135,6 @@ class ImageGenerator:
         self.adapter = self._create_adapter(adapter_config)
 
     async def close(self) -> None:
-        """关闭适配器。"""
+        """Close the active adapter."""
         if self.adapter:
             await self.adapter.close()

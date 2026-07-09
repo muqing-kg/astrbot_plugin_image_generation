@@ -20,7 +20,7 @@ from ..core.shared.types import GenerationRequest, ImageCapability, ImageData
 
 
 class AgnesAIAdapter(BaseImageAdapter):
-    """Agnes AI 图像生成适配器。"""
+    """Agnes AI image generation adapter."""
 
     DEFAULT_BASE_URL = "https://apihub.agnes-ai.com"
     DEFAULT_MODEL = "agnes-image-2.1-flash"
@@ -37,7 +37,7 @@ class AgnesAIAdapter(BaseImageAdapter):
     }
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         configured = self._get_configured_capabilities()
         defaults = (
             ImageCapability.TEXT_TO_IMAGE
@@ -52,7 +52,7 @@ class AgnesAIAdapter(BaseImageAdapter):
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
         payload = self._build_payload(request)
         url = self._endpoint_url()
@@ -91,7 +91,7 @@ class AgnesAIAdapter(BaseImageAdapter):
             return None, safe_log_error_body(e)
 
     def _endpoint_url(self) -> str:
-        """构建 Agnes AI 图像生成接口地址。"""
+        """Build the Agnes AI image generation endpoint URL."""
         base = (self.base_url or self.DEFAULT_BASE_URL).rstrip("/")
         suffix = "/v1/images/generations"
         if base.endswith(suffix):
@@ -101,7 +101,7 @@ class AgnesAIAdapter(BaseImageAdapter):
         return f"{base}{suffix}"
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
-        """构建请求载荷。"""
+        """Build the request payload."""
         payload: dict[str, Any] = {
             "model": self._model_name(),
             "prompt": request.prompt,
@@ -126,11 +126,11 @@ class AgnesAIAdapter(BaseImageAdapter):
         return payload
 
     def _model_name(self) -> str:
-        """获取当前模型名称。"""
+        """Return the active model name."""
         return self.model or self.DEFAULT_MODEL
 
     def _response_format(self) -> str:
-        """解析 Agnes 响应格式配置。"""
+        """Resolve the Agnes response format setting."""
         value = str(self.config.extra.get("response_format") or "base64")
         normalized = value.strip().lower()
         if normalized == "url":
@@ -138,7 +138,7 @@ class AgnesAIAdapter(BaseImageAdapter):
         return "base64"
 
     def _resolve_size(self, request: GenerationRequest) -> str | None:
-        """按宽高比和分辨率解析 Agnes AI size 参数。"""
+        """Resolve the Agnes AI size parameter from aspect ratio and resolution."""
         if not request.aspect_ratio or request.aspect_ratio == UNSPECIFIED_OPTION:
             return None
 
@@ -152,10 +152,10 @@ class AgnesAIAdapter(BaseImageAdapter):
         return size_map.get(aspect_ratio, "1024x1024")
 
     def _build_image_refs(self, images: list[ImageData]) -> list[str]:
-        """构建 Agnes AI 图生图参考图数组。
+        """Build Agnes AI image-to-image reference data URLs.
 
-        QQ 等平台给出的图片 URL 往往是需要平台侧鉴权的临时下载链接，
-        Agnes 云端无法访问；因此这里传 data URL，让参考图内容随请求一起发送。
+        Platform image URLs are often temporary links that require platform-side
+        authentication, so the adapter sends data URLs with the request instead.
         """
         refs: list[str] = []
         for image in images:
@@ -169,7 +169,7 @@ class AgnesAIAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict[str, Any], task_id: str | None = None
     ) -> tuple[list[bytes] | None, str | None]:
-        """从响应中提取图片数据。"""
+        """Extract image bytes from the response payload."""
         if response_error := response.get("error"):
             if isinstance(response_error, dict):
                 message = response_error.get("message") or response_error.get("code")
@@ -211,7 +211,7 @@ class AgnesAIAdapter(BaseImageAdapter):
     def _decode_base64_image(
         self, value: Any, task_id: str | None = None
     ) -> bytes | None:
-        """解码 b64_json 或 data URL 图片。"""
+        """Decode a b64_json or data URL image value."""
         data = str(value or "")
         if ";base64," in data:
             _, _, data = data.partition(";base64,")
@@ -226,7 +226,7 @@ class AgnesAIAdapter(BaseImageAdapter):
     async def _download_image(
         self, url: str, task_id: str | None = None
     ) -> bytes | None:
-        """下载 Agnes AI 返回的临时图片 URL。"""
+        """Download a temporary image URL returned by Agnes AI."""
         prefix = self._get_log_prefix(task_id)
         try:
             async with self._get_session().get(

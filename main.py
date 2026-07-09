@@ -1,7 +1,4 @@
-"""
-AstrBot 图像生成插件主模块
-
-"""
+"""AstrBot image generation plugin entrypoint."""
 
 from __future__ import annotations
 
@@ -64,6 +61,7 @@ from .core.audit.safety import SafetyAuditor
 from .core.tasks.ids import new_task_id
 from .core.tasks.manager import TaskManager
 from .core.config.templates import (
+    build_generation_prompt,
     find_named_entry,
     format_template_summary,
     parse_preset_prompt,
@@ -75,27 +73,27 @@ LOG = log_prefix("Plugin")
 
 
 class ImageGenerationPlugin(Star):
-    """图像生成插件主类"""
+    """Main image generation plugin class."""
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.context = context
 
-        # 数据目录配置：持久数据放插件数据目录，图片临时文件放 AstrBot 官方临时目录
+        # Store persistent data in the plugin directory and images in AstrBot temp.
         self.data_dir = StarTools.get_data_dir()
         self.astrbot_temp_dir = Path(get_astrbot_temp_path())
         self.image_temp_dir = self.astrbot_temp_dir / "astrbot_plugin_image_generation"
         self.image_temp_dir.mkdir(parents=True, exist_ok=True)
 
-        # 初始化配置管理器
+        # Initialize configuration management.
         self.config_manager = ConfigManager(config)
 
-        # 初始化使用数据管理器
+        # Initialize usage accounting.
         self.usage_manager = UsageManager(
             str(self.data_dir), self.config_manager.usage_settings
         )
 
-        # 初始化图片处理器
+        # Initialize image processing.
         self.image_processor = ImageProcessor(
             str(self.image_temp_dir),
             self.config_manager.usage_settings.max_image_size_mb,
@@ -103,7 +101,7 @@ class ImageGenerationPlugin(Star):
             allowed_local_base_dirs=[str(self.astrbot_temp_dir)],
         )
 
-        # 初始化任务管理器
+        # Initialize task management.
         self.task_manager = TaskManager(
             generation_history_limit=self.config_manager.generation_task_history_limit,
             generation_history_retention_days=self.config_manager.generation_task_history_retention_days,
@@ -112,7 +110,7 @@ class ImageGenerationPlugin(Star):
             persistence_file=self.data_dir / "generation_tasks.json",
         )
 
-        # 初始化 LLM 工具结果处理器
+        # Initialize LLM tool result handling.
         self.llm_result_handler = LLMResultHandler(
             context=self.context,
             config_manager=self.config_manager,
@@ -120,10 +118,10 @@ class ImageGenerationPlugin(Star):
             create_background_task=self.create_background_task,
         )
 
-        # 初始化安全审核器
+        # Initialize safety auditing.
         self.safety_auditor = SafetyAuditor(self.context, self.config_manager)
 
-        # 初始化生图执行器
+        # Initialize generation execution.
         self.generation_executor = GenerationExecutor(
             context=self.context,
             config_manager=self.config_manager,
@@ -133,16 +131,16 @@ class ImageGenerationPlugin(Star):
             safety_auditor=self.safety_auditor,
         )
 
-        # 初始化供其他插件调用的公共 API
+        # Initialize the public API exposed to other plugins.
         self.public_api = ImageGenerationPublicAPI(self)
 
-        # 初始化生成器
+        # Initialize the generator lazily after configuration is loaded.
         self.generator: ImageGenerator | None = None
 
-    # ---------------------- 生命周期 ----------------------
+    # Lifecycle.
 
     async def initialize(self):
-        """插件加载时调用"""
+        """Run when the plugin is loaded."""
         if self.config_manager.adapter_config:
             self.generator = ImageGenerator(self.config_manager.adapter_config)
             self.generation_executor.update_generator(self.generator)
@@ -166,13 +164,13 @@ class ImageGenerationPlugin(Star):
             self.config_manager.max_running_generation_tasks
         )
 
-        # 注册 LLM 工具
+        # Register LLM tools.
         self._register_llm_tools()
 
-        # 配置定时任务
+        # Configure scheduled tasks.
         self._setup_tasks()
 
-        # 执行启动任务（在后台异步执行）
+        # Run startup tasks in the background.
         self.task_manager.create_task(self.task_manager.run_startup_tasks())
 
         logger.info(
@@ -180,7 +178,7 @@ class ImageGenerationPlugin(Star):
         )
 
     async def terminate(self):
-        """插件卸载时调用"""
+        """Run when the plugin is unloaded."""
         try:
             await self.task_manager.cancel_all()
             if self.generator:
@@ -189,11 +187,11 @@ class ImageGenerationPlugin(Star):
         except Exception as exc:
             logger.error(f"{LOG} 卸载清理出错: {exc}", exc_info=True)
 
-    # ---------------------- 内部工具 ----------------------
+    # Internal helpers.
 
     def _setup_tasks(self) -> None:
-        """配置并启动定时任务。"""
-        # Jimeng2API 自动领积分任务
+        """Configure and start scheduled tasks."""
+        # Jimeng2API credit receiving task.
         self._setup_jimeng_token_task()
 
     def _register_llm_tools(self) -> None:
@@ -223,43 +221,41 @@ class ImageGenerationPlugin(Star):
             )
 
     def _setup_jimeng_token_task(self) -> None:
-        """配置即梦自动领积分任务。
+        """Configure the Jimeng2API automatic credit receiving task.
 
-        该任务会：
-        1. 在插件启动时执行一次（通过启动任务）
-        2. 每天日期变更时自动执行（通过每日任务）
+        The task runs once during plugin startup and then when the date changes.
 
-        注意：只要配置中包含即梦渠道，就会启用该任务，
-        无论当前使用的是哪个渠道。
+        It is enabled whenever the config contains a Jimeng2API provider,
+        regardless of the currently active provider.
         """
         from .adapter.jimeng2api_adapter import Jimeng2APIAdapter
         from .core.shared.types import AdapterType
 
-        # 检查配置中是否包含即梦渠道（而非检查当前适配器）
+        # Check configured providers instead of the currently active adapter.
         jimeng_config = self.config_manager.get_provider_config(AdapterType.JIMENG2API)
         if not jimeng_config:
             return
 
-        # 创建专门用于任务的即梦适配器实例
+        # Create a dedicated Jimeng2API adapter instance for the scheduled task.
         jimeng_adapter = Jimeng2APIAdapter(jimeng_config)
 
-        # 1. 注册为启动任务，插件启动时执行一次
+        # Register as a startup task so it runs once when the plugin starts.
         self.task_manager.register_startup_task(
             name="jimeng_token_receive",
             coro_func=jimeng_adapter.receive_token,
         )
 
-        # 2. 注册为每日任务，日期变更时执行
+        # Register as a daily task so it runs when the date changes.
         self.task_manager.start_daily_task(
             name="jimeng_token_receive",
             coro_func=jimeng_adapter.receive_token,
-            check_interval_seconds=300,  # 每5分钟检查一次日期变更
-            run_immediately=False,  # 启动任务已处理，无需重复执行
+            check_interval_seconds=300,  # Check date changes every 5 minutes.
+            run_immediately=False,  # Startup task already handles the first run.
         )
         logger.info(f"{LOG} 已配置即梦2API自动领积分任务（启动时+每日）")
 
     def _adjust_tool_parameters(self, tool: ImageGenerationTool) -> None:
-        """根据适配器能力动态调整工具参数。"""
+        """Adjust LLM tool parameters based on adapter capabilities."""
         if not self.generator or not self.generator.adapter:
             return
         capabilities = self.generator.adapter.get_capabilities()
@@ -278,7 +274,7 @@ class ImageGenerationPlugin(Star):
     def create_background_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
     ) -> asyncio.Task:
-        """创建后台任务并添加到管理器中。"""
+        """Create a background task and register it with the task manager."""
         return self.task_manager.create_task(coro, name=name)
 
     def current_adapter_requires_api_key(self) -> bool:
@@ -462,7 +458,8 @@ class ImageGenerationPlugin(Star):
             return "", aspect_ratio, resolution, [], [], []
 
         tokens = raw_prompt.split()
-        prompt_parts: list[str] = []
+        preset_prompts: list[str] = []
+        persona_prompts: list[str] = []
         matched_presets: list[str] = []
         matched_personas: list[str] = []
         persona_images: list[tuple[str, str]] = []
@@ -477,7 +474,7 @@ class ImageGenerationPlugin(Star):
                     resolution,
                 )
                 if preset_prompt:
-                    prompt_parts.append(preset_prompt)
+                    preset_prompts.append(preset_prompt)
                 matched_presets.append(matched_preset)
                 continue
 
@@ -488,7 +485,7 @@ class ImageGenerationPlugin(Star):
                 persona = self.config_manager.personas[matched_persona]
                 persona_prompt = persona.prompt.strip()
                 if persona_prompt:
-                    prompt_parts.append(persona_prompt)
+                    persona_prompts.append(persona_prompt)
                 if persona.image:
                     persona_images.append((matched_persona, persona.image))
                 matched_personas.append(matched_persona)
@@ -500,11 +497,12 @@ class ImageGenerationPlugin(Star):
         if not matched_presets and not matched_personas:
             return raw_prompt, aspect_ratio, resolution, [], [], []
 
-        if extra_content:
-            prompt_parts.append(extra_content)
-
         return (
-            " ".join(part for part in prompt_parts if part).strip(),
+            build_generation_prompt(
+                preset_prompts=preset_prompts,
+                persona_prompts=persona_prompts,
+                extra_prompt=extra_content,
+            ),
             aspect_ratio,
             resolution,
             matched_presets,
@@ -619,11 +617,11 @@ class ImageGenerationPlugin(Star):
             include_finished=False,
         )
 
-    # ---------------------- 指令处理 ----------------------
+    # Command handlers.
 
     @filter.command("生图任务")
     async def image_task_command(self, event: AstrMessageEvent, task_id: str = ""):
-        """查看生图任务列表或指定任务详情。"""
+        """Show image generation tasks or one task detail."""
         user_id = event.unified_msg_origin
         task_id = (task_id or "").strip()
 
@@ -660,7 +658,7 @@ class ImageGenerationPlugin(Star):
     async def cancel_image_task_command(
         self, event: AstrMessageEvent, task_id: str = ""
     ):
-        """取消指定生图任务。"""
+        """Cancel one image generation task."""
         task_id = (task_id or "").strip()
         if not task_id:
             active_records = self.task_manager.list_generation_tasks(
@@ -696,7 +694,7 @@ class ImageGenerationPlugin(Star):
 
     @filter.command("生图")
     async def generate_image_command(self, event: AstrMessageEvent):
-        """处理生图指令。"""
+        """Handle the image generation command."""
         user_id = event.unified_msg_origin
         is_usage_limit_admin = self.is_usage_limit_admin(event)
 
@@ -874,7 +872,7 @@ class ImageGenerationPlugin(Star):
 
     @filter.command("生图模型")
     async def model_command(self, event: AstrMessageEvent, model_index: str = ""):
-        """切换生图模型。"""
+        """Switch the active image generation model."""
         if not self.config_manager.adapter_config:
             yield event.plain_result("❌ 适配器未初始化")
             return
@@ -900,9 +898,9 @@ class ImageGenerationPlugin(Star):
         try:
             index = int(model_index) - 1
             if 0 <= index < len(models):
-                raw_model = models[index]  # "供应商名称/模型名称"
+                raw_model = models[index]  # "provider/model"
 
-                # 更新配置并重新加载
+                # Save config and reload runtime helpers.
                 self.config_manager.save_model_setting(raw_model)
                 self.config_manager.reload()
                 self.reload_runtime_settings()
@@ -921,7 +919,7 @@ class ImageGenerationPlugin(Star):
 
     @filter.command("预设")
     async def preset_command(self, event: AstrMessageEvent):
-        """管理生图预设。"""
+        """Manage image generation presets."""
         user_id = event.unified_msg_origin
         masked_uid = mask_sensitive(user_id)
         message_str = (event.message_str or "").strip()

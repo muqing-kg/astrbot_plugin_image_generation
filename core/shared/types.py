@@ -7,7 +7,7 @@ from typing import Any
 
 
 class AdapterType(str, enum.Enum):
-    """支持的图像生成适配器类型。"""
+    """Supported image generation adapter types."""
 
     GEMINI = "gemini"
     OPENAI_CHAT = "openai_chat"
@@ -22,18 +22,18 @@ class AdapterType(str, enum.Enum):
 
 
 class ImageCapability(enum.Flag):
-    """图像生成适配器支持的功能。"""
+    """Capabilities supported by image generation adapters."""
 
     NONE = 0
-    TEXT_TO_IMAGE = enum.auto()  # 文生图
-    IMAGE_TO_IMAGE = enum.auto()  # 图生图
-    RESOLUTION = enum.auto()  # 指定分辨率
-    ASPECT_RATIO = enum.auto()  # 指定宽高比
+    TEXT_TO_IMAGE = enum.auto()  # Text-to-image generation.
+    IMAGE_TO_IMAGE = enum.auto()  # Image-to-image generation.
+    RESOLUTION = enum.auto()  # Explicit resolution support.
+    ASPECT_RATIO = enum.auto()  # Explicit aspect-ratio support.
 
 
 @dataclass
 class AdapterMetadata:
-    """关于适配器能力的元数据。"""
+    """Metadata describing adapter capabilities."""
 
     name: str
     capabilities: ImageCapability = ImageCapability.TEXT_TO_IMAGE
@@ -41,10 +41,10 @@ class AdapterMetadata:
 
 @dataclass
 class AdapterConfig:
-    """构造适配器所需的配置。"""
+    """Configuration required to construct an adapter."""
 
     type: AdapterType = AdapterType.GEMINI
-    name: str = ""  # 供应商展示名称
+    name: str = ""  # Provider display name.
     base_url: str | None = None
     api_keys: list[str] = field(default_factory=list)
     model: str = ""
@@ -58,12 +58,12 @@ class AdapterConfig:
     non_retryable_error_keywords: list[str] = field(default_factory=list)
     safety_settings: str | None = None
     capability_options: dict[str, bool] = field(default_factory=dict)
-    extra: dict[str, Any] = field(default_factory=dict)  # 适配器特有配置
+    extra: dict[str, Any] = field(default_factory=dict)  # Adapter-specific config.
 
 
 @dataclass
 class ImageData:
-    """带有 MIME 类型和可选来源 URL 的图像数据。"""
+    """Image bytes with MIME type and optional source URL."""
 
     data: bytes
     mime_type: str
@@ -72,7 +72,7 @@ class ImageData:
 
 @dataclass
 class GenerationRequest:
-    """用户生图请求。"""
+    """User image generation request."""
 
     prompt: str
     images: list[ImageData] = field(default_factory=list)
@@ -90,7 +90,7 @@ class GenerationRequest:
 
 @dataclass
 class GenerationResult:
-    """生图尝试的结果。"""
+    """Result of one image generation attempt."""
 
     images: list[bytes] | None = None
     error: str | None = None

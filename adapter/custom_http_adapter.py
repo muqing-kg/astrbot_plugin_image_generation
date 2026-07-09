@@ -18,18 +18,18 @@ EXACT_PLACEHOLDER_PATTERN = re.compile(r"^\{([a-zA-Z0-9_]+)\}$")
 
 
 class CustomHTTPAdapter(BaseImageAdapter):
-    """用户自定义 HTTP JSON 图像生成适配器。"""
+    """User-defined HTTP JSON image generation adapter."""
 
     requires_api_key = False
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次自定义 HTTP 生图请求。"""
+        """Execute one custom HTTP image generation request."""
         start_time = time.time()
         context = self._build_placeholder_context(request)
 

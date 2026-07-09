@@ -1,17 +1,17 @@
-"""常量定义模块。
+"""Shared constants for the image generation plugin.
 
-集中管理项目中使用的常量，避免魔法字符串分散在代码中。
+Constants are centralized here to avoid scattering magic strings.
 """
 
 from __future__ import annotations
 
-# ========================== 日志常量 ==========================
+# Logging constants.
 
 LOG_PREFIX = "[ImageGen]"
-"""统一的日志前缀。"""
+"""Common log prefix."""
 
 
-# ========================== 安全设置 ==========================
+# Safety settings.
 
 GEMINI_SAFETY_CATEGORIES = (
     "HARM_CATEGORY_HARASSMENT",
@@ -20,22 +20,22 @@ GEMINI_SAFETY_CATEGORIES = (
     "HARM_CATEGORY_DANGEROUS_CONTENT",
     "HARM_CATEGORY_CIVIC_INTEGRITY",
 )
-"""Gemini API 支持的安全类别列表。"""
+"""Safety categories supported by the Gemini API."""
 
 
-# ========================== 默认配置值 ==========================
+# Default configuration values.
 
 DEFAULT_TIMEOUT = 180
-"""默认请求超时时间（秒）。"""
+"""Default request timeout in seconds."""
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30
-"""默认图像下载超时时间（秒）。"""
+"""Default image download timeout in seconds."""
 
 DEFAULT_MAX_RETRY_ATTEMPTS = 3
-"""默认最大重试次数。"""
+"""Default maximum retry attempts."""
 
 DEFAULT_NON_RETRYABLE_STATUS_CODES = (400, 401, 403, 404, 405, 422)
-"""默认不可重试 HTTP 状态码。"""
+"""Default non-retryable HTTP status codes."""
 
 DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS = (
     "参数",
@@ -53,70 +53,70 @@ DEFAULT_NON_RETRYABLE_ERROR_KEYWORDS = (
     "content policy",
     "policy violation",
 )
-"""默认不可重试错误关键词。"""
+"""Default non-retryable error keywords."""
 
 DEFAULT_AUDIT_MAX_RETRY_ATTEMPTS = 3
-"""默认审核模型最大重试次数。"""
+"""Default maximum audit model retry attempts."""
 
 UNSPECIFIED_OPTION = "不指定"
-"""表示请求中不携带对应参数的配置选项。"""
+"""Config option that means the request should omit the parameter."""
 
 DEFAULT_ASPECT_RATIO = UNSPECIFIED_OPTION
-"""默认宽高比。"""
+"""Default aspect ratio."""
 
 DEFAULT_RESOLUTION = UNSPECIFIED_OPTION
-"""默认分辨率。"""
+"""Default resolution."""
 
 DEFAULT_MAX_CONCURRENT_TASKS = 3
-"""默认最大并发生图请求数。"""
+"""Default maximum concurrent adapter requests."""
 
 DEFAULT_MAX_RUNNING_GENERATION_TASKS = 1
-"""默认最大并发完整生图任务数。"""
+"""Default maximum number of concurrently running generation tasks."""
 
 DEFAULT_MAX_QUEUED_GENERATION_TASKS = 20
-"""默认最大排队完整生图任务数。"""
+"""Default maximum number of queued generation tasks."""
 
 DEFAULT_ENABLE_GENERATION_TASK_HISTORY = True
-"""默认持久化生图任务历史。"""
+"""Default generation task history persistence setting."""
 
 DEFAULT_GENERATION_TASK_HISTORY_LIMIT = 1000
-"""默认生图任务历史保留条数。"""
+"""Default generation task history item limit."""
 
 DEFAULT_GENERATION_TASK_HISTORY_RETENTION_DAYS = 0
-"""默认生图任务历史保留天数，0 表示不按时间清理。"""
+"""Default generation task history retention days; 0 disables age cleanup."""
 
 DEFAULT_GENERATION_IMAGE_COUNT = 1
-"""默认单次生成图片数量。"""
+"""Default image count per generation request."""
 
 DEFAULT_MAX_GENERATION_IMAGE_COUNT = 10
-"""默认单次最大生成图片数量。"""
+"""Default maximum image count per generation request."""
 
 DEFAULT_MAX_IMAGES_PER_MESSAGE = 5
-"""默认单条消息最多发送的图片数量。"""
+"""Default maximum number of images sent per message."""
 
 DEFAULT_MAX_IMAGE_SIZE_MB = 10
-"""默认最大图片大小（MB）。"""
+"""Default maximum reference image size in MB."""
 
 DEFAULT_DAILY_LIMIT_COUNT = 10
-"""默认每日生成限制次数。"""
+"""Default daily generation limit count."""
 
 DEFAULT_RATE_LIMIT_SECONDS = 0
-"""默认用户请求频率限制（秒），0 表示不限制。"""
+"""Default per-user cooldown in seconds; 0 disables cooldown."""
 
 
-# ========================== LLM 工具开关 ==========================
+# LLM tool switches.
 
 LLM_TOOL_IMAGE_GENERATION = "生图工具"
-"""LLM 生图工具名称。"""
+"""LLM image generation tool name."""
 
 LLM_TOOL_PRESET_QUERY = "预设查询工具"
-"""LLM 预设查询工具名称。"""
+"""LLM preset query tool name."""
 
 LLM_TOOL_PRESET_EDIT = "预设编辑工具"
-"""LLM 预设编辑工具名称。"""
+"""LLM preset editing tool name."""
 
 LLM_TOOL_TASK_MANAGEMENT = "生图任务工具"
-"""LLM 生图任务管理工具名称。"""
+"""LLM image task management tool name."""
 
 ALL_LLM_TOOLS = (
     LLM_TOOL_IMAGE_GENERATION,
@@ -124,25 +124,25 @@ ALL_LLM_TOOLS = (
     LLM_TOOL_TASK_MANAGEMENT,
     LLM_TOOL_PRESET_EDIT,
 )
-"""所有可选 LLM 工具名称。"""
+"""All selectable LLM tool names."""
 
 
-# ========================== 结果信息项 ==========================
+# Result metadata items.
 
 RESULT_INFO_DURATION = "耗时"
-"""生成结果附加耗时信息项。"""
+"""Generated result duration metadata item."""
 
 RESULT_INFO_MODEL = "模型"
-"""生成结果附加模型信息项。"""
+"""Generated result model metadata item."""
 
 RESULT_INFO_COUNT = "生成数量"
-"""生成结果附加数量信息项。"""
+"""Generated result count metadata item."""
 
 RESULT_INFO_USAGE = "用量"
-"""生成结果附加每日用量信息项。"""
+"""Generated result daily usage metadata item."""
 
 RESULT_INFO_TASK_ID = "任务ID"
-"""生成结果附加任务 ID 信息项。"""
+"""Generated result task ID metadata item."""
 
 ALL_RESULT_INFO_ITEMS = (
     RESULT_INFO_DURATION,
@@ -151,13 +151,13 @@ ALL_RESULT_INFO_ITEMS = (
     RESULT_INFO_USAGE,
     RESULT_INFO_TASK_ID,
 )
-"""所有可选生成结果信息项。"""
+"""All selectable generated result metadata items."""
 
 DEFAULT_RESULT_INFO_ITEMS = (RESULT_INFO_USAGE,)
-"""默认显示的生成结果信息项。"""
+"""Default generated result metadata items."""
 
 
-# ========================== 安全审核默认提示词 ==========================
+# Default safety audit prompts.
 
 DEFAULT_PROMPT_AUDIT_PROMPT = (
     "<image_prompt_safety_audit>\n"
@@ -192,7 +192,7 @@ DEFAULT_PROMPT_AUDIT_PROMPT = (
     "  </output_rules>\n"
     "</image_prompt_safety_audit>"
 )
-"""默认提示词安全审核提示词。"""
+"""Default prompt safety audit prompt."""
 
 DEFAULT_IMAGE_AUDIT_PROMPT = (
     "<generated_image_safety_audit>\n"
@@ -230,28 +230,28 @@ DEFAULT_IMAGE_AUDIT_PROMPT = (
     "  </output_rules>\n"
     "</generated_image_safety_audit>"
 )
-"""默认图片安全审核提示词。"""
+"""Default image safety audit prompt."""
 
-# ========================== 脱敏常量 ==========================
+# Masking constants.
 
 MASK_VISIBLE_CHARS = 4
-"""敏感信息脱敏时两端显示的字符数。"""
+"""Visible edge character count for masked sensitive values."""
 
 MASK_MIN_LENGTH = 8
-"""需要脱敏的最小字符串长度。"""
+"""Minimum string length that triggers masking."""
 
 MASK_PLACEHOLDER = "****"
-"""脱敏占位符。"""
+"""Mask placeholder text."""
 
-# ========================== 数据保留策略 ==========================
+# Data retention policy.
 
 USAGE_DATA_RETENTION_DAYS = 7
-"""使用数据保留天数。"""
+"""Usage data retention days."""
 
 
-# ========================== 分辨率映射 ==========================
+# Resolution mappings.
 
-# 1K 分辨率映射（适用于多种适配器）
+# 1K resolution mapping used by multiple adapters.
 RESOLUTION_1K_MAP = {
     "1:1": "1024x1024",
     "4:3": "1024x768",
@@ -262,7 +262,7 @@ RESOLUTION_1K_MAP = {
     "2:3": "640x1024",
 }
 
-# 2K 分辨率映射
+# 2K resolution mapping.
 RESOLUTION_2K_MAP = {
     "1:1": "2048x2048",
     "4:3": "2048x1536",
@@ -274,7 +274,7 @@ RESOLUTION_2K_MAP = {
 }
 
 
-# ========================== 支持的宽高比 ==========================
+# Supported aspect ratios.
 
 SUPPORTED_ASPECT_RATIOS = (
     UNSPECIFIED_OPTION,
@@ -289,31 +289,31 @@ SUPPORTED_ASPECT_RATIOS = (
     "16:9",
     "21:9",
 )
-"""工具参数中支持的宽高比列表。"""
+"""Aspect ratios supported by tool parameters."""
 
 
-# ========================== 支持的分辨率 ==========================
+# Supported resolutions.
 
 SUPPORTED_RESOLUTIONS = (UNSPECIFIED_OPTION, "1K", "2K", "4K")
-"""工具参数中支持的分辨率列表。"""
+"""Resolutions supported by tool parameters."""
 
 
-# ========================== API 端点 ==========================
+# API endpoints.
 
 GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
-"""Gemini API 默认 Base URL。"""
+"""Default Gemini API base URL."""
 
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com"
-"""OpenAI API 默认 Base URL。"""
+"""Default OpenAI API base URL."""
 
 SILICONFLOW_DEFAULT_BASE_URL = "https://api.siliconflow.cn"
-"""SiliconFlow API 默认 Base URL。"""
+"""Default SiliconFlow API base URL."""
 
 VOLCENGINE_ARK_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com"
-"""火山方舟 API 默认 Base URL。"""
+"""Default Volcengine Ark API base URL."""
 
 GITEE_AI_DEFAULT_BASE_URL = "https://ai.gitee.com"
-"""Gitee AI 默认 Base URL。"""
+"""Default Gitee AI base URL."""
 
 JIMENG_DEFAULT_BASE_URL = "http://localhost:5100"
-"""Jimeng2API 默认 Base URL。"""
+"""Default Jimeng2API base URL."""

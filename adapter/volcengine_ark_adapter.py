@@ -73,13 +73,13 @@ class VolcengineArkAdapter(BaseImageAdapter):
     }
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次火山方舟图片生成请求。"""
+        """Execute one Volcengine Ark image generation request."""
         start_time = time.time()
         payload = self._build_payload(request)
         session = self._get_session()
@@ -120,7 +120,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
             return None, safe_log_error_body(exc)
 
     def _build_payload(self, request: GenerationRequest) -> dict[str, Any]:
-        """构建火山方舟图片生成请求。"""
+        """Build the Volcengine Ark image generation request payload."""
         payload: dict[str, Any] = {
             "model": self._model_name(),
             "prompt": request.prompt,
@@ -147,11 +147,11 @@ class VolcengineArkAdapter(BaseImageAdapter):
         return f"{base}/api/v3/images/generations"
 
     def _model_name(self) -> str:
-        """获取当前模型名称。"""
+        """Return the active model name."""
         return self.model or "doubao-seedream-5.0-lite"
 
     def _resolve_size(self, request: GenerationRequest) -> str | None:
-        """按配置、分辨率和宽高比解析 Ark size 参数。"""
+        """Resolve the Ark size parameter from config, resolution, and aspect ratio."""
         if (
             not request.aspect_ratio
             or request.aspect_ratio == UNSPECIFIED_OPTION
@@ -181,7 +181,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
     def _add_images(
         self, payload: dict[str, Any], images: list[ImageData], task_id: str | None
     ) -> None:
-        """将参考图添加为 Ark 支持的 data URL。"""
+        """Add reference images as Ark-supported data URLs."""
         max_images = self._coerce_int(
             self.config.extra.get("max_reference_images"),
             default=14,
@@ -204,7 +204,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
         return f"data:{mime_type};base64,{b64_data}"
 
     def _add_extra_options(self, payload: dict[str, Any]) -> None:
-        """添加火山方舟可选生图参数。"""
+        """Add optional Volcengine Ark generation parameters."""
         extra = self.config.extra
 
         payload["watermark"] = self._coerce_bool(extra.get("watermark"), default=True)
@@ -233,7 +233,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict[str, Any], task_id: str | None = None
     ) -> tuple[list[bytes] | None, str | None]:
-        """从火山方舟响应中提取图片数据。"""
+        """Extract image bytes from a Volcengine Ark response."""
         if response_error := response.get("error"):
             if isinstance(response_error, dict):
                 message = response_error.get("message") or response_error.get("code")
@@ -275,7 +275,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
         return None, "未找到有效的图片数据"
 
     def _format_item_error(self, error: Any) -> str:
-        """格式化单张图片生成错误。"""
+        """Format an item-level image generation error."""
         if not isinstance(error, dict):
             return str(error)
         code = str(error.get("code") or "").strip()
@@ -287,7 +287,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
     async def _download_image(
         self, url: str, task_id: str | None = None
     ) -> bytes | None:
-        """下载火山方舟返回的临时图片 URL。"""
+        """Download a temporary image URL returned by Volcengine Ark."""
         prefix = self._get_log_prefix(task_id)
         try:
             async with self._get_session().get(
@@ -310,7 +310,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
         min_value: int,
         max_value: int,
     ) -> int:
-        """安全转换整数配置。"""
+        """Safely coerce an integer setting."""
         if value in (None, "") or isinstance(value, bool):
             return default
         try:
@@ -320,7 +320,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
         return max(min_value, min(max_value, parsed))
 
     def _coerce_bool(self, value: Any, *, default: bool) -> bool:
-        """安全转换布尔配置。"""
+        """Safely coerce a boolean setting."""
         if isinstance(value, bool):
             return value
         if isinstance(value, str):

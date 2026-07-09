@@ -11,18 +11,18 @@ from ..core.shared.types import GenerationRequest, ImageCapability
 
 
 class GrokAdapter(BaseImageAdapter):
-    """Grok（xAI）图像生成适配器。"""
+    """Grok (xAI) image generation adapter."""
 
     def get_capabilities(self) -> ImageCapability:
-        """获取适配器支持的功能。"""
+        """Return adapter capabilities."""
         return self._get_configured_capabilities()
 
-    # generate() 方法由基类提供，使用模板方法模式
+    # generate() is provided by the base class via the template method pattern.
 
     async def _generate_once(
         self, request: GenerationRequest
     ) -> tuple[list[bytes] | None, str | None]:
-        """执行单次生图请求。"""
+        """Execute one image generation request."""
         start_time = time.time()
 
         payload = self._build_payload(request)
@@ -36,7 +36,7 @@ class GrokAdapter(BaseImageAdapter):
         if not self.base_url:
             url = f"https://api.x.ai/v1{end_point}"
         else:
-            # 考虑到 main.py 会清理掉 /v1，这里统一加上
+            # main.py strips /v1, so add it here consistently.
             url = f"{self.base_url.rstrip('/')}/v1{end_point}"
 
         headers = {
@@ -73,7 +73,7 @@ class GrokAdapter(BaseImageAdapter):
             return None, safe_log_error_body(e)
 
     def _build_payload(self, request: GenerationRequest) -> dict:
-        """构建请求载荷。"""
+        """Build the request payload."""
 
         accept_ratio = [
             "auto",
@@ -133,7 +133,7 @@ class GrokAdapter(BaseImageAdapter):
     async def _extract_images(
         self, response: dict
     ) -> tuple[list[bytes] | None, str | None]:
-        """从响应中提取图片数据。"""
+        """Extract image bytes from the response payload."""
         if "data" not in response:
             return None, "响应中未找到 data 字段"
 
@@ -142,7 +142,7 @@ class GrokAdapter(BaseImageAdapter):
             if "b64_json" in item:
                 images.append(base64.b64decode(item["b64_json"]))
             elif "url" in item:
-                # 如果返回的是 URL，需要下载（虽然我们请求的是 b64_json）
+                # Download URL results even though b64_json is requested.
                 async with self._get_session().get(
                     item["url"], proxy=self.proxy, timeout=self._get_download_timeout()
                 ) as resp:
