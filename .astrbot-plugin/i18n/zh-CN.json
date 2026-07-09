@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "display_name": "通用生图",
+    "short_desc": "多供应商通用图像生成插件。",
+    "desc": "通用图像生成插件，支持多种图像生成模型和多样化的生成方式。"
+  },
+  "config": {
+    "enable_llm_tool": {
+      "labels": [
+        "生图工具",
+        "预设查询工具",
+        "生图任务工具",
+        "预设编辑工具"
+      ]
+    },
+    "api_providers": {
+      "templates": {
+        "gemini": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "openai_chat": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "openai": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          },
+          "model_family": {
+            "labels": ["自动", "GPT Image", "DALL·E"]
+          }
+        },
+        "volcengine_ark": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          },
+          "sequential_image_generation": {
+            "labels": ["禁用", "自动"]
+          },
+          "optimize_prompt_mode": {
+            "labels": ["不发送", "标准", "快速"]
+          }
+        },
+        "siliconflow_adapter": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "gitee_ai": {
+          "image_endpoint": {
+            "labels": ["自动", "生成接口", "编辑接口"]
+          },
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "agnes_ai": {
+          "response_format": {
+            "labels": ["Base64", "URL"]
+          },
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "jimeng2api": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "grok": {
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          }
+        },
+        "custom_http": {
+          "request_method": {
+            "labels": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "capability_options": {
+            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+          },
+          "image_result_type": {
+            "labels": ["自动", "Base64", "Data URL", "URL"]
+          }
+        }
+      }
+    },
+    "generation": {
+      "default_aspect_ratio": {
+        "labels": ["不指定", "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+      },
+      "default_resolution": {
+        "labels": ["不指定", "1K", "2K", "4K"]
+      },
+      "result_info_items": {
+        "labels": ["耗时", "模型", "生成数量", "用量", "任务ID"]
+      }
+    }
+  }
+}

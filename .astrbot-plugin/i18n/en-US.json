@@ -1,0 +1,669 @@
+{
+  "metadata": {
+    "display_name": "Universal Image Generation",
+    "short_desc": "Generate images with multiple providers and models.",
+    "desc": "A universal image generation plugin that supports multiple image generation providers, models, and generation workflows."
+  },
+  "config": {
+    "enable_llm_tool": {
+      "description": "Enable LLM tools",
+      "hint": "Select which tools the LLM can call: image generation, task management, preset query, and preset editing.",
+      "labels": [
+        "Image generation tool",
+        "Preset query tool",
+        "Generation task tool",
+        "Preset editing tool"
+      ]
+    },
+    "api_providers": {
+      "description": "Image model providers",
+      "hint": "Configure one or more image generation providers. Model selection uses the format \"Provider name/Model name\".",
+      "templates": {
+        "gemini": {
+          "name": "Gemini API",
+          "hint": "Call Gemini native image generation APIs.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Optional. Leave empty to use the adapter default endpoint, or set a compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter API keys or tokens for this provider. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "openai_chat": {
+          "name": "OpenAI Chat compatible API",
+          "hint": "Call generic OpenAI Chat Completions compatible image generation APIs. Use this for models or relay services that return images from /v1/chat/completions.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Enter an OpenAI Chat Completions compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter API keys or tokens for this provider. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          },
+          "prompt_prefix": {
+            "description": "Prompt prefix",
+            "hint": "Text prefix sent to Chat Completions. Leave empty to send the user prompt directly."
+          },
+          "modalities": {
+            "description": "Output modalities",
+            "hint": "The modalities field sent in the request body. Some compatible APIs require image and text. Leave empty to omit this field."
+          },
+          "extra_body_json": {
+            "description": "Extra request body JSON",
+            "hint": "Optional. Enter a JSON object to merge into the top level of the Chat Completions request body."
+          }
+        },
+        "openai": {
+          "name": "OpenAI API",
+          "hint": "Call OpenAI image generation APIs.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Optional. Leave empty to use the adapter default endpoint, or set a compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter API keys or tokens for this provider. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          },
+          "model_family": {
+            "description": "Model family",
+            "hint": "Affects the OpenAI request format. auto detects the gpt-image or dall-e family from the model name.",
+            "labels": ["Auto", "GPT Image", "DALL·E"]
+          }
+        },
+        "volcengine_ark": {
+          "name": "Volcengine Ark API",
+          "hint": "Call the Volcengine Ark /api/v3/images/generations image generation API.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Defaults to https://ark.cn-beijing.volces.com. You can also enter a full endpoint that includes /api/v3."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter Volcengine Ark API keys. Requests are sent with Bearer tokens."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with actual model IDs or endpoint IDs in the console."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Seedream models usually support text to image, image to image, aspect ratio, and resolution.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          },
+          "watermark": {
+            "description": "Add watermark",
+            "hint": "When enabled, add an \"AI generated\" watermark to the bottom-right corner of the image."
+          },
+          "sequential_image_generation": {
+            "description": "Image set mode",
+            "hint": "auto allows the model to generate an image set from the prompt. disabled only generates a single image.",
+            "labels": ["Disabled", "Auto"]
+          },
+          "sequential_max_images": {
+            "description": "Maximum images in image set",
+            "hint": "Only effective when image set mode is auto. The total number of reference images and generated images cannot exceed 15."
+          },
+          "max_reference_images": {
+            "description": "Maximum reference images",
+            "hint": "Limit the number of reference images used in a single request, up to 14."
+          },
+          "optimize_prompt_mode": {
+            "description": "Prompt optimization mode",
+            "hint": "standard has higher quality but takes longer. fast is quicker with lower quality. Leave empty to omit this field.",
+            "labels": ["Do not send", "Standard", "Fast"]
+          },
+          "enable_web_search": {
+            "description": "Enable web search",
+            "hint": "Supported only by some models. When enabled, the model can decide whether to search the internet."
+          }
+        },
+        "siliconflow_adapter": {
+          "name": "SiliconFlow API",
+          "hint": "Call the SiliconFlow /v1/images/generations image generation API.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Defaults to https://api.siliconflow.cn. You can also enter an endpoint that includes /v1; the plugin will normalize it automatically."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter SiliconFlow API keys. Requests are sent with Bearer tokens."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          },
+          "negative_prompt": {
+            "description": "Negative prompt",
+            "hint": "Optional. When set, it is sent as negative_prompt in the request."
+          },
+          "num_inference_steps": {
+            "description": "Inference steps",
+            "hint": "Range: 1–100. Set to 0 to omit this field."
+          },
+          "guidance_scale": {
+            "description": "Prompt guidance scale",
+            "hint": "Range: 0–20. Leave empty to omit this field."
+          }
+        },
+        "gitee_ai": {
+          "name": "Gitee AI API",
+          "hint": "Call Gitee AI /v1/images/generations and /v1/images/edits image APIs.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Defaults to https://ai.gitee.com. You can also enter a compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter Gitee AI access tokens. Requests are sent with Bearer tokens."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account. In auto endpoint mode, the plugin chooses the generation or edit API by model and reference images."
+          },
+          "image_endpoint": {
+            "description": "Image endpoint mode",
+            "hint": "auto chooses the generation or edit API automatically. generations and edits force a specific endpoint.",
+            "labels": ["Auto", "Generations", "Edits"]
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "agnes_ai": {
+          "name": "Agnes AI API",
+          "hint": "Agnes AI image generation API.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Optional. Leave empty to use https://apihub.agnes-ai.com, or set a compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter API keys or tokens for this provider. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account."
+          },
+          "response_format": {
+            "description": "Response format",
+            "hint": "base64 returns images directly. url returns remote links.",
+            "labels": ["Base64", "URL"]
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the model. Aspect ratio is mapped to the size field and is not sent as aspect_ratio.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "jimeng2api": {
+          "name": "Jimeng reverse API",
+          "hint": "Call image generation services based on the iptag/jimeng-api project.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Enter the jimeng-api service endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "If the service enables authentication, enter access keys. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models actually supported by the service."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "grok": {
+          "name": "Grok (xAI) API",
+          "hint": "Call Grok image generation APIs.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Optional. Leave empty to use the adapter default endpoint, or set a compatible endpoint."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Enter API keys or tokens for this provider. Multiple keys can be configured for rotation."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Keep this list aligned with models available to your account."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "custom_http": {
+          "name": "Custom HTTP API (Beta)",
+          "hint": "Advanced configuration: customize JSON request bodies, request headers, and response image extraction paths for HTTP image APIs that return base64, data URLs, or image URLs.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Base API endpoint. The custom HTTP adapter does not automatically remove the /v1 path."
+          },
+          "endpoint": {
+            "description": "Endpoint path",
+            "hint": "Optional. Joined with the API endpoint, such as /v1/images/generations. If a full http(s) URL is entered, it is used directly."
+          },
+          "request_method": {
+            "description": "Request method",
+            "hint": "POST is recommended. Choose another method only when the target API explicitly requires it.",
+            "labels": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Optional. Use {api_key} in JSON templates. Multiple keys are rotated automatically."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Use {model} in JSON templates."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "Select capabilities actually supported by the API. Unselected capabilities will not be used in requests.",
+            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control."
+          },
+          "headers_json": {
+            "description": "Headers JSON",
+            "hint": "A JSON object. Supports placeholders such as {api_key}, {model}, {prompt}, and {task_id}. Authorization headers with an empty Bearer value are omitted automatically."
+          },
+          "query_params_json": {
+            "description": "Query parameters JSON",
+            "hint": "A JSON object sent as URL query parameters. Supports placeholders such as {api_key}, {model}, {prompt}, and {task_id}."
+          },
+          "payload_json": {
+            "description": "Request body JSON",
+            "hint": "A JSON object. Supports placeholders such as {prompt}, {model}, {aspect_ratio}, {resolution}, {reference_images_data_url}, {reference_images_base64}, {reference_image_0}, and {task_id}. If a field value exactly equals an array placeholder, it is written as an array instead of a string."
+          },
+          "image_result_path": {
+            "description": "Image result path",
+            "hint": "Path used to extract image data from the JSON response. Supports dot notation and * wildcards, such as data.*.b64_json and data.*.url. Multiple paths can be separated by newlines or commas."
+          },
+          "image_result_type": {
+            "description": "Image result type",
+            "hint": "auto detects base64, data URLs, and HTTP image URLs by content.",
+            "labels": ["Auto", "Base64", "Data URL", "URL"]
+          },
+          "error_result_path": {
+            "description": "Error message path",
+            "hint": "Optional. Path used to extract error messages from the JSON response. When empty, error.message and error are tried."
+          },
+          "success_status_codes": {
+            "description": "Successful HTTP status codes",
+            "hint": "Responses with these HTTP status codes are treated as successful."
+          }
+        }
+      }
+    },
+    "generation": {
+      "description": "Generation and result settings",
+      "hint": "Configure the default model, default image parameters, result display, and task start message.",
+      "model": {
+        "description": "Image model",
+        "hint": "Can be switched with the /生图模型 command. Format: \"Provider name/Model name\". Leave empty to use the first available model automatically."
+      },
+      "default_image_count": {
+        "description": "Default image count",
+        "hint": "Default number of images generated by a single task when not specified in commands or LLM tools."
+      },
+      "max_image_count": {
+        "description": "Maximum images per task",
+        "hint": "Limit the maximum number of images in a single generation task. Requests above this value are truncated automatically."
+      },
+      "max_images_per_message": {
+        "description": "Maximum images per message",
+        "hint": "When multiple images are generated, this limits how many images each message carries. Extra images are sent in batches, and result information is appended to the last batch."
+      },
+      "default_aspect_ratio": {
+        "description": "Default aspect ratio",
+        "hint": "Default aspect ratio. Select \"Not specified\" to omit the aspect ratio field from requests.",
+        "labels": ["Not specified", "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+      },
+      "default_resolution": {
+        "description": "Default resolution",
+        "hint": "Default resolution. Select \"Not specified\" to omit the resolution field from requests.",
+        "labels": ["Not specified", "1K", "2K", "4K"]
+      },
+      "result_info_items": {
+        "description": "Show result information",
+        "hint": "Information appended after successful generation. Usage is shown only when daily quota is enabled.",
+        "labels": ["Elapsed time", "Model", "Generated count", "Usage", "Task ID"]
+      },
+      "start_task_message_template": {
+        "description": "Task start message template",
+        "hint": "Message sent when a task starts. Supported placeholders: {reference_image_count}, {image_count}, {count}, {prompt}, {preset}, {presets}, {persona}, {personas}, {aspect_ratio}, {resolution}, {task_id}, {model}, {mode}, {reference_images_block}, {image_count_block}, {count_block}, {preset_block}, and {persona_block}. Leave empty to send nothing."
+      }
+    },
+    "generation_runtime": {
+      "description": "Runtime Control",
+      "hint": "Configure image generation runtime timeout, retries, concurrency, queue limits, non-retryable errors, and debug logging.",
+      "timeout": {
+        "description": "Timeout (seconds)",
+        "hint": "Default timeout for a single model request. Provider settings can override this."
+      },
+      "max_retry_attempts": {
+        "description": "Retry count",
+        "hint": "Default retry count after a single model request fails. Provider settings can override this."
+      },
+      "debug_request_logging": {
+        "description": "Print debug request logs",
+        "hint": "When enabled, JSON request and response structures are printed in debug logs. Long strings, Base64, and data URLs are summarized."
+      },
+      "show_user_error_details": {
+        "description": "Show detailed errors to users",
+        "hint": "When enabled, generation failure messages include sanitized and summarized remote error details. When disabled, only the API error type and status code are shown."
+      },
+      "non_retryable_status_codes": {
+        "description": "Non-retryable HTTP status codes",
+        "hint": "Requests fail immediately without retrying when these HTTP status codes are returned. Useful for parameter errors, authentication failures, permission issues, or missing resources."
+      },
+      "non_retryable_error_keywords": {
+        "description": "Non-retryable error keywords",
+        "hint": "Requests fail immediately without retrying when the error text contains these keywords. Useful for parameter errors, unsupported models, or content safety rejections."
+      },
+      "max_concurrent_tasks": {
+        "description": "Maximum concurrent image requests",
+        "hint": "Maximum number of simultaneous image model API requests. Multi-image tasks run requests within this limit and continue submitting remaining requests as earlier ones finish."
+      },
+      "max_running_generation_tasks": {
+        "description": "Maximum concurrent generation tasks",
+        "hint": "Maximum number of full generation tasks running at the same time. Each running task is still constrained by request-level concurrency."
+      },
+      "max_queued_generation_tasks": {
+        "description": "Maximum queued generation tasks",
+        "hint": "Maximum number of full generation tasks waiting to start, excluding running tasks. New tasks are rejected when the queue is full."
+      }
+    },
+    "user_limits": {
+      "description": "Usage limits",
+      "hint": "Configure session blacklist, user rate limits, daily quota, and reference image size limits.",
+      "umo_blacklist": {
+        "description": "Session UMO blacklist",
+        "hint": "Enter unified_msg_origin (UMO) values. Matching sessions cannot use image generation."
+      },
+      "admin_bypass_limits": {
+        "description": "Admins bypass usage limits",
+        "hint": "When enabled, AstrBot administrators can bypass the session blacklist, rate limit, and daily quota, while daily usage is still recorded."
+      },
+      "umo_whitelist": {
+        "description": "Usage limit whitelist UMO",
+        "hint": "Enter unified_msg_origin (UMO) values. Matching sessions bypass the session blacklist, rate limit, and daily quota, while daily usage is still recorded."
+      },
+      "blacklist_block_message": {
+        "description": "Blacklist rejection message",
+        "hint": "Text returned to the user when the blacklist is matched. Leave empty to send nothing."
+      },
+      "rate_limit_seconds": {
+        "description": "Rate limit (seconds)",
+        "hint": "Minimum interval between two requests from the same user. Set to 0 to disable rate limiting."
+      },
+      "max_image_size_mb": {
+        "description": "Maximum reference image size (MB)",
+        "hint": "Reference images larger than this limit are ignored."
+      },
+      "enable_daily_limit": {
+        "description": "Enable daily quota",
+        "hint": "When enabled, limit how many images each user can generate per day."
+      },
+      "daily_limit_count": {
+        "description": "Daily quota",
+        "hint": "Maximum number of images each user can generate per day."
+      }
+    },
+    "safety_audit": {
+      "description": "Safety audit",
+      "hint": "Configure prompt audit, image audit, and audit whitelist.",
+      "umo_whitelist": {
+        "description": "Audit whitelist UMO",
+        "hint": "Enter unified_msg_origin (UMO) values. Matching sessions skip prompt and image audits."
+      },
+      "prompt_audit": {
+        "description": "Prompt audit",
+        "blocked_words": {
+          "description": "Blocked word list",
+          "hint": "Reject image generation directly when the prompt contains any of these words."
+        },
+        "enable_ai_audit": {
+          "description": "Enable AI prompt audit",
+          "hint": "When enabled, call a chat model to audit user prompts."
+        },
+        "ai_provider_id": {
+          "description": "AI audit model",
+          "hint": "Select the chat model provider used for prompt audit. Leave empty to use the current session model."
+        },
+        "max_retry_attempts": {
+          "description": "Audit model retry count",
+          "hint": "Maximum attempts when the audit model call fails, returns empty output, or cannot be parsed."
+        },
+        "ai_prompt": {
+          "description": "AI audit prompt",
+          "hint": "Prompt sent to the audit model. Supports the {prompt} placeholder. If the placeholder is missing, the user prompt is appended automatically."
+        }
+      },
+      "image_audit": {
+        "description": "Image audit",
+        "enable_ai_audit": {
+          "description": "Enable AI image audit",
+          "hint": "When enabled, call a chat model to audit generated images before sending them."
+        },
+        "ai_provider_id": {
+          "description": "AI audit model",
+          "hint": "Select the chat model provider used for image audit. Leave empty to use the current session model."
+        },
+        "max_retry_attempts": {
+          "description": "Audit model retry count",
+          "hint": "Maximum attempts when the audit model call fails, returns empty output, or cannot be parsed."
+        },
+        "ai_prompt": {
+          "description": "AI audit prompt",
+          "hint": "Prompt sent to the audit model. The current prompt is included only when {prompt} is present."
+        }
+      }
+    },
+    "prompt_templates": {
+      "description": "Prompt templates",
+      "hint": "Centrally configure preset prompts and persona templates. View them with /预设 and use them by name with /生图.",
+      "presets": {
+        "description": "Preset prompts",
+        "hint": "Each item uses the format \"name:prompt\". JSON objects with prompt, aspect_ratio, resolution, and description are also supported."
+      },
+      "personas": {
+        "description": "Persona templates",
+        "hint": "Configure reusable persona descriptions and reference images. When using /生图 <persona name> [extra prompt], the persona is applied automatically.",
+        "templates": {
+          "persona": {
+            "name": "Persona",
+            "hint": "Reusable persona template.",
+            "persona_name": {
+              "description": "Persona name",
+              "hint": "Used for matching in the /生图 command."
+            },
+            "persona_prompt": {
+              "description": "Persona description",
+              "hint": "Prepended to the prompt when generating images with this persona."
+            },
+            "persona_image": {
+              "description": "Persona reference image",
+              "hint": "Optional. Used as an image-to-image reference image."
+            }
+          }
+        }
+      }
+    },
+    "generation_task_history": {
+      "description": "Task persistence",
+      "hint": "Configure whether generation task history is persisted, and set history count and retention days.",
+      "enable_generation_task_history": {
+        "description": "Persist generation task history",
+        "hint": "When enabled, task status, session identifier, prompt summary, result paths, and error summary are saved in the plugin data directory. When disabled, tasks are kept only in runtime memory."
+      },
+      "generation_task_history_limit": {
+        "description": "Generation task history limit",
+        "hint": "Maximum number of generation task records to keep. Active tasks are not removed by history trimming."
+      },
+      "generation_task_history_retention_days": {
+        "description": "Generation task history retention days",
+        "hint": "Completed tasks older than this number of days are cleaned up. Set to 0 to disable time-based cleanup and use only the count limit."
+      }
+    }
+  }
+}
