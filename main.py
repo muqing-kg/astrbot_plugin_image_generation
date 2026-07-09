@@ -168,7 +168,7 @@ class ImageGenerationPlugin(Star):
         self._register_llm_tools()
 
         # Configure scheduled tasks.
-        self._setup_tasks()
+        self._setup_jimeng_token_task()
 
         # Run startup tasks in the background.
         self.task_manager.create_task(self.task_manager.run_startup_tasks())
@@ -188,11 +188,6 @@ class ImageGenerationPlugin(Star):
             logger.error(f"{LOG} 卸载清理出错: {exc}", exc_info=True)
 
     # Internal helpers.
-
-    def _setup_tasks(self) -> None:
-        """Configure and start scheduled tasks."""
-        # Jimeng2API credit receiving task.
-        self._setup_jimeng_token_task()
 
     def _register_llm_tools(self) -> None:
         """Register enabled LLM tools."""
@@ -263,13 +258,16 @@ class ImageGenerationPlugin(Star):
         props = tool.parameters.get("properties", {})
         if not self.config_manager.personas:
             props.pop("persona", None)
-        elif isinstance(props.get("persona"), dict):
-            props["persona"].pop("enum", None)
-            if persona_names := "、".join(self.config_manager.personas):
-                props["persona"]["description"] = (
-                    str(props["persona"].get("description", "")).rstrip("。")
-                    + f"。可用人设: {persona_names}；多个名称可用空格分隔。"
-                )
+            return
+        persona_props = props.get("persona")
+        if not isinstance(persona_props, dict):
+            return
+        persona_props.pop("enum", None)
+        if persona_names := "、".join(self.config_manager.personas):
+            persona_props["description"] = (
+                str(persona_props.get("description", "")).rstrip("。")
+                + f"。可用人设: {persona_names}；多个名称可用空格分隔。"
+            )
 
     def create_background_task(
         self, coro: Coroutine[Any, Any, Any], name: str | None = None
@@ -332,7 +330,7 @@ class ImageGenerationPlugin(Star):
     ) -> GenerationTaskRecord:
         """Create and track an image generation task in the unified task manager."""
         if preset is None:
-            preset, preset_label = self._format_template_summary(
+            preset, preset_label = format_template_summary(
                 presets or [],
                 personas or [],
             )
@@ -433,19 +431,6 @@ class ImageGenerationPlugin(Star):
 
         return default_count, raw_prompt
 
-    def _find_named_entry(self, entries: dict[str, Any], token: str) -> str | None:
-        """Find an entry by exact or case-insensitive name."""
-        return find_named_entry(entries, token)
-
-    def _parse_preset_prompt(
-        self,
-        preset_content: Any,
-        aspect_ratio: str,
-        resolution: str,
-    ) -> tuple[str, str, str]:
-        """Parse a preset prompt and optional generation overrides."""
-        return parse_preset_prompt(preset_content, aspect_ratio, resolution)
-
     def _parse_command_prompt_templates(
         self,
         prompt: str,
@@ -466,9 +451,9 @@ class ImageGenerationPlugin(Star):
         extra_content = ""
 
         for index, token in enumerate(tokens):
-            matched_preset = self._find_named_entry(self.config_manager.presets, token)
+            matched_preset = find_named_entry(self.config_manager.presets, token)
             if matched_preset:
-                preset_prompt, aspect_ratio, resolution = self._parse_preset_prompt(
+                preset_prompt, aspect_ratio, resolution = parse_preset_prompt(
                     self.config_manager.presets[matched_preset],
                     aspect_ratio,
                     resolution,
@@ -478,9 +463,7 @@ class ImageGenerationPlugin(Star):
                 matched_presets.append(matched_preset)
                 continue
 
-            matched_persona = self._find_named_entry(
-                self.config_manager.personas, token
-            )
+            matched_persona = find_named_entry(self.config_manager.personas, token)
             if matched_persona:
                 persona = self.config_manager.personas[matched_persona]
                 persona_prompt = persona.prompt.strip()
@@ -508,30 +491,6 @@ class ImageGenerationPlugin(Star):
             matched_presets,
             matched_personas,
             persona_images,
-        )
-
-    def _format_template_summary(
-        self,
-        matched_presets: list[str],
-        matched_personas: list[str],
-    ) -> tuple[str | None, str]:
-        """Format matched preset/persona names for task metadata."""
-        return format_template_summary(matched_presets, matched_personas)
-
-    def _format_start_template_values(
-        self,
-        *,
-        preset: str | None,
-        presets: list[str] | None,
-        personas: list[str] | None,
-    ) -> dict[str, str]:
-        """Build preset/persona placeholder values for the start-task template."""
-        from .core.formatting.result import format_start_template_values
-
-        return format_start_template_values(
-            preset=preset,
-            presets=presets,
-            personas=personas,
         )
 
     def format_start_task_message(
@@ -730,7 +689,7 @@ class ImageGenerationPlugin(Star):
             matched_personas,
             persona_images,
         ) = self._parse_command_prompt_templates(prompt, aspect_ratio, resolution)
-        preset_or_persona, preset_label = self._format_template_summary(
+        preset_or_persona, preset_label = format_template_summary(
             matched_presets,
             matched_personas,
         )

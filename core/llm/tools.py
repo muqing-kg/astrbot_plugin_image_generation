@@ -16,6 +16,7 @@ from astrbot.core.astr_agent_context import AstrAgentContext
 
 from ..config.templates import (
     build_generation_prompt,
+    find_named_entry,
     format_template_summary,
     normalize_name_items as _normalize_name_items,
     parse_preset_prompt,
@@ -121,9 +122,7 @@ def _parse_preset(
     prompt_parts: list[str] = []
     matched_presets: list[str] = []
     for preset_name in names:
-        matched_preset = plugin._find_named_entry(
-            plugin.config_manager.presets, preset_name
-        )
+        matched_preset = find_named_entry(plugin.config_manager.presets, preset_name)
         if not matched_preset:
             return (
                 [],
@@ -159,7 +158,7 @@ def _parse_persona(
     persona_images: list[tuple[str, str]] = []
     matched_personas: list[str] = []
     for persona_name in names:
-        matched_persona = plugin._find_named_entry(
+        matched_persona = find_named_entry(
             plugin.config_manager.personas,
             persona_name,
         )
@@ -568,9 +567,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
 
         if category == "persona":
             if name:
-                matched_name = plugin._find_named_entry(
-                    plugin.config_manager.personas, name
-                )
+                matched_name = find_named_entry(plugin.config_manager.personas, name)
                 if not matched_name:
                     return f"❌ 人设不存在: {name}"
                 return _format_persona_detail(
@@ -589,7 +586,7 @@ class PresetQueryTool(FunctionTool[AstrAgentContext]):
             return "\n".join(lines)
 
         if name:
-            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
+            matched_name = find_named_entry(plugin.config_manager.presets, name)
             if not matched_name:
                 return f"❌ 预设不存在: {name}"
             return _format_preset_detail(
@@ -676,7 +673,7 @@ class PresetEditTool(FunctionTool[AstrAgentContext]):
             return f"✅ 预设已保存: {name}"
 
         if action == "delete_preset":
-            matched_name = plugin._find_named_entry(plugin.config_manager.presets, name)
+            matched_name = find_named_entry(plugin.config_manager.presets, name)
             if not matched_name:
                 return f"❌ 预设不存在: {name}"
             plugin.config_manager.delete_preset(matched_name)
@@ -794,20 +791,17 @@ def adjust_tool_parameters(
     """Adjust tool parameters dynamically based on adapter capabilities."""
     props = tool.parameters.get("properties", {})
 
-    if not (capabilities & ImageCapability.ASPECT_RATIO):
-        if "aspect_ratio" in props:
-            del props["aspect_ratio"]
-            logger.debug(f"{LOG} 适配器不支持宽高比，已从工具参数中移除")
-
-    if not (capabilities & ImageCapability.RESOLUTION):
-        if "resolution" in props:
-            del props["resolution"]
-            logger.debug(f"{LOG} 适配器不支持分辨率，已从工具参数中移除")
+    unsupported_parameters = (
+        (ImageCapability.ASPECT_RATIO, "aspect_ratio", "宽高比"),
+        (ImageCapability.RESOLUTION, "resolution", "分辨率"),
+    )
+    for capability, key, label in unsupported_parameters:
+        if not (capabilities & capability) and props.pop(key, None) is not None:
+            logger.debug(f"{LOG} 适配器不支持{label}，已从工具参数中移除")
 
     if not (capabilities & ImageCapability.IMAGE_TO_IMAGE):
         for key in ("avatar_references", "reference_images"):
-            if key in props:
-                del props[key]
+            props.pop(key, None)
         logger.debug(f"{LOG} 适配器不支持参考图，已从工具参数中移除参考图相关参数")
 
 

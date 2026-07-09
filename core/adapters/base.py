@@ -103,10 +103,6 @@ class BaseImageAdapter(abc.ABC):
             return ""
         return self.api_keys[self.current_key_index % len(self.api_keys)]
 
-    def _get_masked_api_key(self) -> str:
-        """Return the masked current API key for logs."""
-        return mask_sensitive(self._get_current_api_key())
-
     def _get_log_prefix(self, task_id: str | None = None) -> str:
         """Return the adapter log prefix."""
         adapter_name = self.__class__.__name__.replace("Adapter", "")

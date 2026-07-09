@@ -83,10 +83,6 @@ class ImageProcessor:
         if allowed_local_base_dirs:
             base_dirs.extend(allowed_local_base_dirs)
         self._allowed_local_base_dirs = self._normalize_allowed_base_dirs(base_dirs)
-        self._ensure_temp_dir()
-
-    def _ensure_temp_dir(self) -> None:
-        """Ensure the temporary directory exists."""
         os.makedirs(self._temp_dir, exist_ok=True)
 
     def update_settings(self, max_image_size_mb: int | None = None) -> None:
@@ -128,14 +124,6 @@ class ImageProcessor:
             result.append(path)
         return tuple(result)
 
-    def _allowed_base_dirs_for(self, workspace_dir: str | None) -> tuple[str, ...]:
-        """Return base dirs for one local file lookup."""
-        if not workspace_dir:
-            return self._allowed_local_base_dirs
-        return self._normalize_allowed_base_dirs(
-            (*self._allowed_local_base_dirs, workspace_dir)
-        )
-
     def _is_path_within_allowed_dirs(
         self,
         path: str,
@@ -174,7 +162,11 @@ class ImageProcessor:
         ):
             return None
 
-        allowed_base_dirs = self._allowed_base_dirs_for(workspace_dir)
+        allowed_base_dirs = self._allowed_local_base_dirs
+        if workspace_dir:
+            allowed_base_dirs = self._normalize_allowed_base_dirs(
+                (*allowed_base_dirs, workspace_dir)
+            )
         candidates: list[str] = []
         if self._is_absolute_path(value):
             candidates.append(value)
