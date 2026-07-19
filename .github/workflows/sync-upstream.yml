@@ -1,0 +1,186 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # Every 6 hours (UTC)
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report, do not push"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Merge upstream and protect fork patches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        env:
+          UPSTREAM_REPO: Railgun19457/astrbot_plugin_image_generation
+          UPSTREAM_BRANCH: master
+        run: |
+          set -euo pipefail
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+          echo "Upstream tip: $(git rev-parse --short "upstream/${UPSTREAM_BRANCH}")"
+          echo "Fork tip:     $(git rev-parse --short HEAD)"
+
+      - name: Merge upstream with protected-file resolution
+        id: merge
+        env:
+          UPSTREAM_BRANCH: master
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          PROTECTED_LIST=".github/FORK_PROTECTED_FILES.txt"
+          if [[ ! -f "$PROTECTED_LIST" ]]; then
+            echo "Missing $PROTECTED_LIST"
+            exit 1
+          fi
+
+          mapfile -t PROTECTED < <(grep -vE '^\s*(#|$)' "$PROTECTED_LIST" | sed 's/\r$//')
+          echo "Protected files (${#PROTECTED[@]}):"
+          printf ' - %s\n' "${PROTECTED[@]}"
+
+          is_protected() {
+            local f="$1"
+            local p
+            for p in "${PROTECTED[@]}"; do
+              [[ "$f" == "$p" ]] && return 0
+            done
+            return 1
+          }
+
+          BEFORE="$(git rev-parse HEAD)"
+          UPSTREAM_SHA="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+
+          if git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD; then
+            echo "status=already_up_to_date" >> "$GITHUB_OUTPUT"
+            echo "Fork already contains upstream. Nothing to merge."
+            exit 0
+          fi
+
+          set +e
+          git merge --no-ff --no-edit "upstream/${UPSTREAM_BRANCH}"
+          MERGE_RC=$?
+          set -e
+
+          if [[ $MERGE_RC -eq 0 ]]; then
+            echo "status=merged_clean" >> "$GITHUB_OUTPUT"
+            echo "Clean merge succeeded."
+          else
+            echo "Merge conflicts detected; applying protected-file strategy..."
+            mapfile -t CONFLICTS < <(git diff --name-only --diff-filter=U || true)
+            if [[ ${#CONFLICTS[@]} -eq 0 ]]; then
+              echo "Merge failed without listed conflicts."
+              git status
+              exit 1
+            fi
+
+            RESOLVED_OURS=()
+            RESOLVED_THEIRS=()
+            for f in "${CONFLICTS[@]}"; do
+              if is_protected "$f"; then
+                echo "KEEP OURS (fork patch): $f"
+                git checkout --ours -- "$f"
+                git add -- "$f"
+                RESOLVED_OURS+=("$f")
+              else
+                echo "TAKE THEIRS (upstream): $f"
+                git checkout --theirs -- "$f"
+                git add -- "$f"
+                RESOLVED_THEIRS+=("$f")
+              fi
+            done
+
+            mapfile -t STILL < <(git diff --name-only --diff-filter=U || true)
+            if [[ ${#STILL[@]} -gt 0 ]]; then
+              echo "Still unmerged after resolution:"
+              printf ' - %s\n' "${STILL[@]}"
+              exit 1
+            fi
+
+            {
+              echo "chore: sync upstream (auto-resolved conflicts)"
+              echo
+              echo "Strategy:"
+              echo "- protected fork files kept (ours)"
+              echo "- other conflicts took upstream (theirs)"
+              echo
+              if [[ ${#RESOLVED_OURS[@]} -gt 0 ]]; then
+                echo "Kept ours:"
+                printf '  - %s\n' "${RESOLVED_OURS[@]}"
+                echo
+              fi
+              if [[ ${#RESOLVED_THEIRS[@]} -gt 0 ]]; then
+                echo "Took theirs:"
+                printf '  - %s\n' "${RESOLVED_THEIRS[@]}"
+              fi
+            } | git commit -F -
+
+            echo "status=merged_with_resolution" >> "$GITHUB_OUTPUT"
+            echo "ours_count=${#RESOLVED_OURS[@]}" >> "$GITHUB_OUTPUT"
+            echo "theirs_count=${#RESOLVED_THEIRS[@]}" >> "$GITHUB_OUTPUT"
+          fi
+
+          AFTER="$(git rev-parse HEAD)"
+          echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
+          echo "after=$AFTER" >> "$GITHUB_OUTPUT"
+
+          if [[ "$BEFORE" == "$AFTER" ]]; then
+            echo "No new commit produced."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Dry run: skip push. Would push $AFTER"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            git log --oneline "$BEFORE..$AFTER" || true
+            exit 0
+          fi
+
+          git push origin HEAD
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+          echo "Pushed $(git rev-parse --short HEAD) to origin."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Upstream sync"
+            echo
+            echo "- status: \`${{ steps.merge.outputs.status || 'failed' }}\`"
+            echo "- pushed: \`${{ steps.merge.outputs.pushed || 'false' }}\`"
+            echo "- before: \`${{ steps.merge.outputs.before || 'n/a' }}\`"
+            echo "- after: \`${{ steps.merge.outputs.after || 'n/a' }}\`"
+            echo
+            echo "Protected files are listed in \`.github/FORK_PROTECTED_FILES.txt\`."
+            echo "On conflict, those paths always keep the fork version so WeChat/image patches stay intact."
+          } >> "$GITHUB_STEP_SUMMARY"

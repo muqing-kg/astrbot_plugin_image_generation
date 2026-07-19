@@ -51,16 +51,40 @@ def normalize_string_items(raw: Any) -> list[str]:
 
 def resolve_avatar_user_id(event: Any, ref: str) -> str | None:
     """Resolve an avatar reference into a platform user id."""
-    normalized = ref.strip().lower()
-    if not normalized:
+    raw = ref.strip()
+    if not raw:
         return None
+    normalized = raw.lower()
     if normalized == "self" and hasattr(event, "get_self_id"):
         return str(event.get_self_id())
     if normalized == "sender" and hasattr(event, "get_sender_id"):
         return str(event.get_sender_id() or event.unified_msg_origin)
 
-    cleaned = normalized.removeprefix("qq:").removeprefix("@").strip()
+    cleaned = raw
+    for prefix in ("qq:", "wx:", "wechat:", "user:", "@"):
+        lower = cleaned.lower()
+        if lower.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip()
+            break
+    cleaned = cleaned.removeprefix("@").strip()
+    if not cleaned:
+        return None
+    # QQ UIN and WeChatBridge mapped numeric ids.
     if cleaned.isdigit():
+        return cleaned
+    # WeChat raw wxid / other platform string ids (keep original case).
+    # Reject free-form phrases; only accept compact id-like tokens.
+    if " " in cleaned or len(cleaned) > 64:
+        return None
+    lower_cleaned = cleaned.lower()
+    if lower_cleaned.startswith("wxid_") or lower_cleaned.startswith("wx_"):
+        return cleaned
+    # Compact alphanumeric ids (Telegram, Discord snowflakes as text, etc.).
+    if (
+        2 <= len(cleaned) <= 64
+        and all(ch.isalnum() or ch in "_-." for ch in cleaned)
+        and any(ch.isalpha() for ch in cleaned)
+    ):
         return cleaned
     return None
 
@@ -218,10 +242,14 @@ async def collect_tool_reference_images(
         if not user_id or user_id in avatar_user_ids:
             continue
         avatar_user_ids.add(user_id)
-        if avatar_data := await image_processor.get_avatar(user_id):
-            images_data.append(ImageData(data=avatar_data, mime_type="image/jpeg"))
+        if avatar_image := await image_processor.get_avatar(user_id, event=event):
+            images_data.append(avatar_image)
             logger.debug(
                 f"{task_log} 已添加 {mask_sensitive(user_id)} 的头像作为参考图"
+            )
+        else:
+            logger.warning(
+                f"{task_log} 头像参考图获取失败: user_id={mask_sensitive(user_id)}"
             )
 
     return deduplicate_reference_images(

@@ -1,4 +1,27 @@
 ### 更新日志
+- **v1.5.5-2026-07-19**
+  - 修复 `get_avatar` 返回 `ImageData` 后工具头像参考图被错误二次包装的问题，保留真实 MIME。
+  - 加固微信识别：读取适配器 `platform_id` / `adapter_display_name`（如「微信-xxx」），避免仅凭 `aiocqhttp` 误判。
+  - qlogo 回退更严格：平台返回 WeChatBridge 头像字段（`avatar_proxy_url` / `wx_avatar_url` / `wx.qlogo` / `/avatar/`）时禁止走 QQ CDN。
+  - 引用图回退仅在 Reply 未解析到图且顶层也无图时调用 `get_msg`，减少无效 API。
+  - 收紧 `avatar_references` 用户 ID 解析，拒绝过长或含空格的自由文本。
+
+
+- **v1.5.4-2026-07-19**
+  - 头像参考图支持微信侧：优先通过 `get_stranger_info` / `get_user_info` / `get_group_member_info` 取 `avatar` / `avatar_url` / `avatar_proxy_url`。
+  - QQ 兼容保留：仅在 user_id 像 QQ 号时回退 `q4.qlogo.cn`，避免微信数字 ID 误走 QQ CDN。
+  - `@` 提及与工具 `avatar_references` 均传入 event，确保桥接 API 可解析。
+
+- **v1.5.3-2026-07-19**
+  - 针对 WeChatBridge 协议加固参考图提取：引用消息仅带 reply id、顶层 image 段为 HTTP/`base64://` 时也能取到图。
+  - 新增 `get_msg` / `get_message` 回退：当 Reply.chain 为空时，按 reply id 拉取被引消息中的图片。
+  - 与 WeChatBridge 入站图 HTTP 优先策略配合，降低大图因 WebSocket 体积被丢弃导致的「参考图=0」。
+
+- **v1.5.2-2026-07-19**
+  - 修复指令生图在微信/aiocqhttp 引用图片时参考图为 0 的问题：当 `Reply.chain` 为空或不完整时，回退使用 AstrBot 官方引用消息图片解析。
+  - 增强参考图来源兼容：支持 `base64://`、`data:image/*;base64`、`file://`，并优先走 `Image.convert_to_file_path` / MediaResolver。
+  - 对 OneBot 缓存 file id 增加 `get_image` / `get_file` / 群文件 URL 回退解析，降低“明明发了图却按文生图发送”的失败率。
+
 - **v1.5.1-2026-07-14**
   - 新增 `dashboard` 插件 Page，可在 AstrBot WebUI 中提交生图任务、查看任务队列和详情、取消任务并下载生成结果。
   - 新增 Page 后端 API，支持状态查询、任务查询、任务提交、参考图上传、任务取消和结果图片下载。
@@ -239,3 +262,4 @@
 - **v0.1.0-2025-12-21**
   - 首个beta版本
   - 由 astrbot_plugin_gemini_image 修改而来
+
