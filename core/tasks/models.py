@@ -103,6 +103,8 @@ class GenerationTaskRecord:
     requested_count: int
     aspect_ratio: str
     resolution: str
+    model: str = ""
+    prompt: str = ""
     preset: str | None = None
     preset_label: str = "预设"
     status: GenerationTaskStatus = GenerationTaskStatus.QUEUED

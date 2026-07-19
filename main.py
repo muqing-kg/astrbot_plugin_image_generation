@@ -58,6 +58,7 @@ from .core.formatting.result import (
     format_task_list as render_task_list,
 )
 from .core.audit.safety import SafetyAuditor
+from .core.page import ImageGenerationPageAPI
 from .core.tasks.ids import new_task_id
 from .core.tasks.manager import TaskManager
 from .core.config.templates import (
@@ -84,6 +85,8 @@ class ImageGenerationPlugin(Star):
         self.astrbot_temp_dir = Path(get_astrbot_temp_path())
         self.image_temp_dir = self.astrbot_temp_dir / "astrbot_plugin_image_generation"
         self.image_temp_dir.mkdir(parents=True, exist_ok=True)
+        self.page_upload_dir = self.image_temp_dir / "page_uploads"
+        self.page_upload_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize configuration management.
         self.config_manager = ConfigManager(config)
@@ -136,6 +139,10 @@ class ImageGenerationPlugin(Star):
 
         # Initialize the generator lazily after configuration is loaded.
         self.generator: ImageGenerator | None = None
+
+        # Register WebUI Plugin Page APIs.
+        self.page_api = ImageGenerationPageAPI(self)
+        self.page_api.register()
 
     # Lifecycle.
 
@@ -351,6 +358,12 @@ class ImageGenerationPlugin(Star):
             )
 
         try:
+            current_model = ""
+            if self.config_manager.adapter_config:
+                current_model = (
+                    f"{self.config_manager.adapter_config.name}/"
+                    f"{self.config_manager.adapter_config.model}"
+                )
             record = self.task_manager.create_generation_task(
                 _generation_coro_factory,
                 task_id=task_id,
@@ -361,6 +374,7 @@ class ImageGenerationPlugin(Star):
                 requested_count=image_count,
                 aspect_ratio=aspect_ratio,
                 resolution=resolution,
+                model=current_model,
                 preset=preset,
                 preset_label=preset_label,
                 usage_scope=unified_msg_origin,

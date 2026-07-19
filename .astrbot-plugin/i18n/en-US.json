@@ -4,6 +4,160 @@
     "short_desc": "Generate images with multiple providers and models.",
     "desc": "A universal image generation plugin that supports multiple image generation providers, models, and generation workflows."
   },
+  "pages": {
+    "dashboard": {
+      "eyebrow": "Plugin Page",
+      "title": "Universal Image Generation Dashboard",
+      "description": "Submit generation tasks, monitor the queue, and download results inside AstrBot WebUI.",
+      "refresh": "Refresh",
+      "submit": "Generate",
+      "submitting": "Submitting...",
+      "uploading": "Uploading...",
+      "status": {
+        "model": "Current model",
+        "queue": "Queue",
+        "queued": "Queued",
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "cancelling": "Cancelling",
+        "cancelled": "Cancelled",
+        "pending": "Pending"
+      },
+      "form": {
+        "eyebrow": "Create",
+        "title": "Create generation task",
+        "prompt": "Prompt",
+        "promptPlaceholder": "Describe the image you want, or select only presets/personas.",
+        "model": "Model",
+        "imageCount": "Image count",
+        "aspectRatio": "Aspect ratio",
+        "resolution": "Resolution",
+        "presets": "Presets",
+        "personas": "Personas",
+        "optional": "Optional",
+        "referenceImages": "Reference images",
+        "referenceHint": "Supports jpg/png/webp/gif/heic/heif, limited by plugin settings.",
+        "referenceUnsupported": "The current adapter does not declare image-to-image support.",
+        "noPresets": "No presets",
+        "noPersonas": "No personas",
+        "noModels": "Use configured model",
+        "unspecified": "Unspecified",
+        "resultEmptyTitle": "Results appear here after submit",
+        "resultEmptyDescription": "Progress, errors, and generated images stay on this page so you do not need to leave Generate.",
+        "resultTitle": "Current generation",
+        "resultCount": "{count} tasks",
+        "openTask": "Open in tasks",
+        "clearResult": "Dismiss result"
+      },
+      "tasks": {
+        "eyebrow": "Queue",
+        "title": "Task queue",
+        "empty": "No tasks yet",
+        "createdAt": "Created",
+        "progress": "Progress",
+        "results": "Results",
+        "keywordPlaceholder": "Task ID / prompt / preset / persona / model / UMO",
+        "sourceAll": "All sources",
+        "modelAll": "All models",
+        "count": "{total} tasks, page {page}/{pages}",
+        "prevPage": "Previous",
+        "nextPage": "Next",
+        "pageInfo": "Page {page} / {pages}"
+      },
+      "filter": {
+        "all": "All",
+        "active": "Active"
+      },
+      "detail": {
+        "emptyTitle": "Select a task to view details",
+        "emptyDescription": "Task results, errors, and download actions will appear here.",
+        "title": "Task detail",
+        "cancel": "Cancel task",
+        "download": "Download image",
+        "taskId": "Task ID",
+        "createdAt": "Created at",
+        "startedAt": "Started at",
+        "finishedAt": "Finished at",
+        "duration": "Duration",
+        "queued": "Queued",
+        "requested": "Requested",
+        "references": "References",
+        "preset": "Preset",
+        "persona": "Persona",
+        "template": "Template",
+        "none": "None",
+        "message": "Message",
+        "error": "Error",
+        "items": "Items",
+        "results": "Results",
+        "noResults": "No generated results yet",
+        "noItems": "No item details yet",
+        "source": "Task source",
+        "userOrigin": "User UMO",
+        "model": "Model",
+        "previewUnavailable": "Preview unavailable",
+        "previewFailed": "Preview failed",
+        "expandPrompt": "Show full prompt",
+        "collapsePrompt": "Collapse prompt"
+      },
+      "message": {
+        "stateLoaded": "State refreshed",
+        "taskSubmitted": "Task submitted",
+        "uploaded": "Reference image uploaded",
+        "cancelled": "Task cancellation requested",
+        "downloadStarted": "Download started",
+        "galleryLoaded": "Gallery refreshed",
+        "statsLoaded": "Statistics refreshed"
+      },
+      "error": {
+        "generic": "Operation failed"
+      },
+      "nav": {
+        "overview": "Overview",
+        "generate": "Generate",
+        "tasks": "Tasks",
+        "gallery": "Gallery"
+      },
+      "overview": {
+        "statsTitle": "Usage statistics",
+        "totalTasks": "Total tasks",
+        "successRate": "Success rate",
+        "totalImages": "Generated images",
+        "uniqueUsers": "Users",
+        "dailyTrend": "Daily volume",
+        "statusChart": "Task status",
+        "modelChart": "Model usage",
+        "userChart": "Active users",
+        "sourceChart": "Task sources",
+        "successMeta": "{success} succeeded / {terminal} finished",
+        "imageMeta": "{available} available",
+        "modelMeta": "{models} models",
+        "modelSuccessRate": "Success {rate}%",
+        "noData": "No statistics yet",
+        "avgDuration": "Avg duration {duration}"
+      },
+      "gallery": {
+        "eyebrow": "Gallery",
+        "title": "Generated gallery",
+        "empty": "No generated images yet",
+        "unavailable": "File cleaned up",
+        "keywordPlaceholder": "Task ID / prompt / preset / model",
+        "modelAll": "All models",
+        "model": "Model",
+        "daysAll": "All time",
+        "days1": "Last 1 day",
+        "days7": "Last 7 days",
+        "days30": "Last 30 days",
+        "count": "{total} images, {available} available",
+        "openTask": "Open task"
+      },
+      "lightbox": {
+        "close": "Close",
+        "open": "View full image"
+      }
+    }
+  },
   "config": {
     "enable_llm_tool": {
       "description": "Enable LLM tools",
@@ -41,7 +195,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -74,7 +233,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -119,7 +283,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -132,7 +301,11 @@
           "model_family": {
             "description": "Model family",
             "hint": "Affects the OpenAI request format. auto detects the gpt-image or dall-e family from the model name.",
-            "labels": ["Auto", "GPT Image", "DALL·E"]
+            "labels": [
+              "Auto",
+              "GPT Image",
+              "DALL·E"
+            ]
           }
         },
         "volcengine_ark": {
@@ -157,7 +330,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Seedream models usually support text to image, image to image, aspect ratio, and resolution.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -174,7 +352,10 @@
           "sequential_image_generation": {
             "description": "Image set mode",
             "hint": "auto allows the model to generate an image set from the prompt. disabled only generates a single image.",
-            "labels": ["Disabled", "Auto"]
+            "labels": [
+              "Disabled",
+              "Auto"
+            ]
           },
           "sequential_max_images": {
             "description": "Maximum images in image set",
@@ -187,7 +368,11 @@
           "optimize_prompt_mode": {
             "description": "Prompt optimization mode",
             "hint": "standard has higher quality but takes longer. fast is quicker with lower quality. Leave empty to omit this field.",
-            "labels": ["Do not send", "Standard", "Fast"]
+            "labels": [
+              "Do not send",
+              "Standard",
+              "Fast"
+            ]
           },
           "enable_web_search": {
             "description": "Enable web search",
@@ -216,7 +401,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -261,12 +451,21 @@
           "image_endpoint": {
             "description": "Image endpoint mode",
             "hint": "auto chooses the generation or edit API automatically. generations and edits force a specific endpoint.",
-            "labels": ["Auto", "Generations", "Edits"]
+            "labels": [
+              "Auto",
+              "Generations",
+              "Edits"
+            ]
           },
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -299,12 +498,20 @@
           "response_format": {
             "description": "Response format",
             "hint": "base64 returns images directly. url returns remote links.",
-            "labels": ["Base64", "URL"]
+            "labels": [
+              "Base64",
+              "URL"
+            ]
           },
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the model. Aspect ratio is mapped to the size field and is not sent as aspect_ratio.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -337,7 +544,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -370,7 +582,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select the capabilities actually supported by the current model. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -395,7 +612,13 @@
           "request_method": {
             "description": "Request method",
             "hint": "POST is recommended. Choose another method only when the target API explicitly requires it.",
-            "labels": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            "labels": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
           },
           "proxy": {
             "description": "Proxy URL",
@@ -412,7 +635,12 @@
           "capability_options": {
             "description": "Model capabilities",
             "hint": "Select capabilities actually supported by the API. Unselected capabilities will not be used in requests.",
-            "labels": ["Text to image", "Image to image", "Aspect ratio", "Resolution"]
+            "labels": [
+              "Text to image",
+              "Image to image",
+              "Aspect ratio",
+              "Resolution"
+            ]
           },
           "timeout": {
             "description": "Timeout override (seconds)",
@@ -441,7 +669,12 @@
           "image_result_type": {
             "description": "Image result type",
             "hint": "auto detects base64, data URLs, and HTTP image URLs by content.",
-            "labels": ["Auto", "Base64", "Data URL", "URL"]
+            "labels": [
+              "Auto",
+              "Base64",
+              "Data URL",
+              "URL"
+            ]
           },
           "error_result_path": {
             "description": "Error message path",
@@ -476,17 +709,40 @@
       "default_aspect_ratio": {
         "description": "Default aspect ratio",
         "hint": "Default aspect ratio. Select \"Not specified\" to omit the aspect ratio field from requests.",
-        "labels": ["Not specified", "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+        "labels": [
+          "Not specified",
+          "1:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
       },
       "default_resolution": {
         "description": "Default resolution",
         "hint": "Default resolution. Select \"Not specified\" to omit the resolution field from requests.",
-        "labels": ["Not specified", "1K", "2K", "4K"]
+        "labels": [
+          "Not specified",
+          "1K",
+          "2K",
+          "4K"
+        ]
       },
       "result_info_items": {
         "description": "Show result information",
         "hint": "Information appended after successful generation. Usage is shown only when daily quota is enabled.",
-        "labels": ["Elapsed time", "Model", "Generated count", "Usage", "Task ID"]
+        "labels": [
+          "Elapsed time",
+          "Model",
+          "Generated count",
+          "Usage",
+          "Task ID"
+        ]
       },
       "start_task_message_template": {
         "description": "Task start message template",

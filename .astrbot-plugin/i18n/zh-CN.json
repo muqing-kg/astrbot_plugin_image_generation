@@ -4,6 +4,160 @@
     "short_desc": "多供应商通用图像生成插件。",
     "desc": "通用图像生成插件，支持多种图像生成模型和多样化的生成方式。"
   },
+  "pages": {
+    "dashboard": {
+      "eyebrow": "Plugin Page",
+      "title": "通用生图控制台",
+      "description": "在 AstrBot WebUI 中提交生图任务、查看队列状态并下载生成结果。",
+      "refresh": "刷新",
+      "submit": "开始生成",
+      "submitting": "提交中...",
+      "uploading": "上传中...",
+      "status": {
+        "model": "当前模型",
+        "queue": "队列",
+        "queued": "排队中",
+        "running": "生成中",
+        "succeeded": "已完成",
+        "failed": "失败",
+        "cancelling": "取消中",
+        "cancelled": "已取消",
+        "pending": "等待中"
+      },
+      "form": {
+        "eyebrow": "Create",
+        "title": "创建生图任务",
+        "prompt": "提示词",
+        "promptPlaceholder": "描述你想生成的画面，也可以只选择预设或人设。",
+        "model": "模型",
+        "imageCount": "生成数量",
+        "aspectRatio": "宽高比",
+        "resolution": "分辨率",
+        "presets": "预设",
+        "personas": "人设",
+        "optional": "可选",
+        "referenceImages": "参考图",
+        "referenceHint": "支持 jpg/png/webp/gif/heic/heif，按配置限制大小。",
+        "referenceUnsupported": "当前适配器未声明图生图能力。",
+        "noPresets": "暂无预设",
+        "noPersonas": "暂无人设",
+        "noModels": "使用当前配置模型",
+        "unspecified": "不指定",
+        "resultEmptyTitle": "提交后在此查看结果",
+        "resultEmptyDescription": "生成进度、错误信息和图片结果会显示在这里，无需离开当前页面。",
+        "resultTitle": "本次生成",
+        "resultCount": "{count} 个任务",
+        "openTask": "在任务页查看",
+        "clearResult": "关闭结果"
+      },
+      "tasks": {
+        "eyebrow": "Queue",
+        "title": "任务队列",
+        "empty": "暂无任务",
+        "createdAt": "创建",
+        "progress": "进度",
+        "results": "结果",
+        "keywordPlaceholder": "任务 ID / 提示词 / 预设 / 人设 / 模型 / UMO",
+        "sourceAll": "全部来源",
+        "modelAll": "全部模型",
+        "count": "共 {total} 条，当前第 {page}/{pages} 页",
+        "prevPage": "上一页",
+        "nextPage": "下一页",
+        "pageInfo": "第 {page} / {pages} 页"
+      },
+      "filter": {
+        "all": "全部",
+        "active": "进行中"
+      },
+      "detail": {
+        "emptyTitle": "选择一个任务查看详情",
+        "emptyDescription": "任务结果、错误信息和下载入口会显示在这里。",
+        "title": "任务详情",
+        "cancel": "取消任务",
+        "download": "下载图片",
+        "taskId": "任务 ID",
+        "createdAt": "创建时间",
+        "startedAt": "开始时间",
+        "finishedAt": "结束时间",
+        "duration": "耗时",
+        "queued": "排队",
+        "requested": "请求数量",
+        "references": "参考图",
+        "preset": "预设",
+        "persona": "人设",
+        "template": "模板",
+        "none": "无",
+        "message": "消息",
+        "error": "错误",
+        "items": "子任务",
+        "results": "生成结果",
+        "noResults": "暂无生成结果",
+        "noItems": "暂无子任务详情",
+        "source": "任务来源",
+        "userOrigin": "用户 UMO",
+        "model": "模型",
+        "previewUnavailable": "暂无预览",
+        "previewFailed": "预览失败",
+        "expandPrompt": "展开完整提示词",
+        "collapsePrompt": "收起提示词"
+      },
+      "message": {
+        "stateLoaded": "状态已刷新",
+        "taskSubmitted": "任务已提交",
+        "uploaded": "参考图已上传",
+        "cancelled": "已请求取消任务",
+        "downloadStarted": "已开始下载",
+        "galleryLoaded": "图库已刷新",
+        "statsLoaded": "统计已刷新"
+      },
+      "error": {
+        "generic": "操作失败"
+      },
+      "nav": {
+        "overview": "概览",
+        "generate": "生成",
+        "tasks": "任务",
+        "gallery": "图库"
+      },
+      "overview": {
+        "statsTitle": "使用统计",
+        "totalTasks": "总任务",
+        "successRate": "成功率",
+        "totalImages": "生成图片",
+        "uniqueUsers": "用户数",
+        "dailyTrend": "每日任务量",
+        "statusChart": "任务状态",
+        "modelChart": "模型使用",
+        "userChart": "活跃用户",
+        "sourceChart": "任务来源",
+        "successMeta": "成功 {success} / 终态 {terminal}",
+        "imageMeta": "可用 {available}",
+        "modelMeta": "模型 {models}",
+        "modelSuccessRate": "成功率 {rate}%",
+        "noData": "暂无统计数据",
+        "avgDuration": "平均耗时 {duration}"
+      },
+      "gallery": {
+        "eyebrow": "Gallery",
+        "title": "生成图库",
+        "empty": "暂无生成图片",
+        "unavailable": "文件已清理",
+        "keywordPlaceholder": "任务 ID / 提示词 / 预设 / 模型",
+        "modelAll": "全部模型",
+        "model": "模型",
+        "daysAll": "全部时间",
+        "days1": "近 1 天",
+        "days7": "近 7 天",
+        "days30": "近 30 天",
+        "count": "共 {total} 张，可用 {available} 张",
+        "openTask": "查看任务"
+      },
+      "lightbox": {
+        "close": "关闭",
+        "open": "查看大图"
+      }
+    }
+  },
   "config": {
     "enable_llm_tool": {
       "labels": [
@@ -17,86 +171,188 @@
       "templates": {
         "gemini": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "openai_chat": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "openai": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           },
           "model_family": {
-            "labels": ["自动", "GPT Image", "DALL·E"]
+            "labels": [
+              "自动",
+              "GPT Image",
+              "DALL·E"
+            ]
           }
         },
         "volcengine_ark": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           },
           "sequential_image_generation": {
-            "labels": ["禁用", "自动"]
+            "labels": [
+              "禁用",
+              "自动"
+            ]
           },
           "optimize_prompt_mode": {
-            "labels": ["不发送", "标准", "快速"]
+            "labels": [
+              "不发送",
+              "标准",
+              "快速"
+            ]
           }
         },
         "siliconflow_adapter": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "gitee_ai": {
           "image_endpoint": {
-            "labels": ["自动", "生成接口", "编辑接口"]
+            "labels": [
+              "自动",
+              "生成接口",
+              "编辑接口"
+            ]
           },
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "agnes_ai": {
           "response_format": {
-            "labels": ["Base64", "URL"]
+            "labels": [
+              "Base64",
+              "URL"
+            ]
           },
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "jimeng2api": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "grok": {
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           }
         },
         "custom_http": {
           "request_method": {
-            "labels": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            "labels": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
           },
           "capability_options": {
-            "labels": ["文生图", "图生图", "宽高比", "分辨率"]
+            "labels": [
+              "文生图",
+              "图生图",
+              "宽高比",
+              "分辨率"
+            ]
           },
           "image_result_type": {
-            "labels": ["自动", "Base64", "Data URL", "URL"]
+            "labels": [
+              "自动",
+              "Base64",
+              "Data URL",
+              "URL"
+            ]
           }
         }
       }
     },
     "generation": {
       "default_aspect_ratio": {
-        "labels": ["不指定", "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+        "labels": [
+          "不指定",
+          "1:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
       },
       "default_resolution": {
-        "labels": ["不指定", "1K", "2K", "4K"]
+        "labels": [
+          "不指定",
+          "1K",
+          "2K",
+          "4K"
+        ]
       },
       "result_info_items": {
-        "labels": ["耗时", "模型", "生成数量", "用量", "任务ID"]
+        "labels": [
+          "耗时",
+          "模型",
+          "生成数量",
+          "用量",
+          "任务ID"
+        ]
       }
     }
   }

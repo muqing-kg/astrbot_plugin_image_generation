@@ -121,11 +121,13 @@ class GenerationTaskStore:
             "source": record.source,
             "unified_msg_origin": record.unified_msg_origin,
             "prompt_summary": record.prompt_summary,
+            "prompt": record.prompt or "",
             "reference_image_count": record.reference_image_count,
             "requested_count": record.requested_count,
             "result_count": record.result_count,
             "aspect_ratio": record.aspect_ratio,
             "resolution": record.resolution,
+            "model": record.model,
             "preset": record.preset,
             "preset_label": record.preset_label,
             "status": record.status.value,
@@ -192,6 +194,7 @@ class GenerationTaskStore:
             source=str(raw_record.get("source") or "历史记录"),
             unified_msg_origin=str(raw_record.get("unified_msg_origin") or ""),
             prompt_summary=safe_log_text(raw_record.get("prompt_summary") or "", 80),
+            prompt=str(raw_record.get("prompt") or ""),
             reference_image_count=self._safe_int(
                 raw_record.get("reference_image_count"),
                 0,
@@ -200,6 +203,7 @@ class GenerationTaskStore:
             requested_count=requested_count,
             aspect_ratio=str(raw_record.get("aspect_ratio") or ""),
             resolution=str(raw_record.get("resolution") or ""),
+            model=str(raw_record.get("model") or ""),
             preset=(
                 str(raw_record.get("preset")) if raw_record.get("preset") else None
             ),

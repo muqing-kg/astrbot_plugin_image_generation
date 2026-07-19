@@ -178,6 +178,7 @@ class TaskManager(
         requested_count: int,
         aspect_ratio: str,
         resolution: str,
+        model: str = "",
         preset: str | None = None,
         preset_label: str = "预设",
         usage_scope: str = "",
@@ -200,15 +201,18 @@ class TaskManager(
             )
 
         safe_requested_count = max(1, requested_count)
+        full_prompt = str(prompt or "")
         record = GenerationTaskRecord(
             task_id=task_id,
             source=source,
             unified_msg_origin=unified_msg_origin,
-            prompt_summary=safe_log_text(prompt, 80),
+            prompt_summary=safe_log_text(full_prompt, 80),
+            prompt=full_prompt,
             reference_image_count=reference_image_count,
             requested_count=safe_requested_count,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
+            model=str(model or "").strip(),
             preset=preset,
             preset_label=preset_label,
             items={
