@@ -1022,19 +1022,33 @@ class ImageProcessor:
         if not reply_ids:
             return []
 
+        # WeChatBridge may still be recovering the quoted inbound image.
+        # One short retry is enough for the common race; keep QQ path single-shot.
+        attempts = 2 if self._event_hints_wechat_name(event) else 1
         images_data: list[ImageData] = []
         for reply_id in reply_ids:
             payload = None
-            for action, params in (
-                ("get_msg", {"message_id": reply_id}),
-                ("get_msg", {"id": reply_id}),
-                ("get_message", {"message_id": reply_id}),
-            ):
-                try:
-                    payload = await call_action(action, **params)
+            for attempt in range(attempts):
+                for action, params in (
+                    ("get_msg", {"message_id": reply_id}),
+                    ("get_msg", {"id": reply_id}),
+                    ("get_message", {"message_id": reply_id}),
+                ):
+                    try:
+                        payload = await call_action(action, **params)
+                        break
+                    except Exception:
+                        continue
+                if payload is not None and self._iter_dict_image_refs(payload):
                     break
-                except Exception:
-                    continue
+                if attempt + 1 < attempts:
+                    try:
+                        import asyncio as _asyncio
+
+                        await _asyncio.sleep(0.8)
+                    except Exception:
+                        pass
+                    payload = None
             if payload is None:
                 logger.debug(f"{LOG} get_msg 无结果: reply_id={reply_id}")
                 continue
