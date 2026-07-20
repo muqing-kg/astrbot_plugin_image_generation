@@ -898,6 +898,79 @@
           }
         }
       },
+      "codex_responses": {
+        "name": "Codex Responses 接口",
+        "hint": "调用固定的 POST /codex/responses 图像生成接口。请求体固定使用 model、input 和 image_generation 工具（output_format=png），并要求接口在同一次响应中返回图片。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
+            "type": "string",
+            "default": "Codex Responses"
+          },
+          "base_url": {
+            "description": "接口地址",
+            "hint": "填写 OpenAI 官方 Codex 入口 https://chatgpt.com/backend-api/codex/responses，或填写根地址 https://chatgpt.com/backend-api；插件会自动规范化并拼接 /codex/responses，不要填写查询参数。",
+            "type": "string",
+            "default": ""
+          },
+          "proxy": {
+            "description": "代理地址",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
+            "type": "string",
+            "default": ""
+          },
+          "api_keys": {
+            "description": "API 密钥",
+            "hint": "使用 Authorization: Bearer <API Key> 发送；可配置多个用于失败重试时轮换。",
+            "type": "list",
+            "default": []
+          },
+          "available_models": {
+            "description": "可用模型列表",
+            "hint": "用于 /生图模型 命令切换；请按接口实际支持的 Codex 模型填写。",
+            "type": "list",
+            "default": []
+          },
+          "capability_options": {
+            "description": "模型能力",
+            "hint": "支持文生图和图生图：有参考图时会使用 Responses 多模态 input 发送图片；宽高比和分辨率不会发送到 Codex Responses 请求。",
+            "type": "list",
+            "options": [
+              "文生图",
+              "图生图"
+            ],
+            "default": [
+              "文生图",
+              "图生图"
+            ]
+          },
+          "timeout": {
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 600,
+              "step": 10
+            },
+            "default": 0
+          },
+          "max_retry_attempts": {
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用“运行控制”中的重试次数；重试时会自动轮换 API Key。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 1
+            },
+            "default": 0
+          }
+        }
+      },
       "custom_http": {
         "name": "自定义 HTTP 接口(Beta)",
         "hint": "高级配置：自定义 JSON 请求体、请求头和响应图片提取路径，适配任意返回 base64、data URL 或图片 URL 的 HTTP 生图接口。",

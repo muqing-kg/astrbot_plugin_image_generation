@@ -1,4 +1,9 @@
 ### 更新日志
+- **Unreleased**
+  - 新增 `codex_responses` 专用图片生成适配器，固定请求 `POST /codex/responses`，发送 `model`、`input` 和带 `output_format=png` 的 `image_generation` 工具；支持 Responses 多模态 `input_image` 图生图。
+  - 支持解析 Responses 风格 `output[*].type == image_generation_call` 的 `result` 图片数据，并兼容 Base64、data URL、图片 URL 与常见中转包装字段。
+  - 新增中英文 WebUI 配置模板和 Codex Responses 使用文档；支持同步文生图和图生图，不支持宽高比、分辨率、SSE 或异步轮询。
+
 - **v1.5.1-2026-07-14**
   - 新增 `dashboard` 插件 Page，可在 AstrBot WebUI 中提交生图任务、查看任务队列和详情、取消任务并下载生成结果。
   - 新增 Page 后端 API，支持状态查询、任务查询、任务提交、参考图上传、任务取消和结果图片下载。
