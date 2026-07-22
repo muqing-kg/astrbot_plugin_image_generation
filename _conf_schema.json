@@ -327,9 +327,10 @@
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换；请按控制台实际模型 ID 或 Endpoint ID 维护。",
+            "hint": "用于 /生图模型 命令切换；请按控制台实际模型 ID 或 Endpoint ID 维护。Seedream 5.0 Pro 不支持组图与联网搜索，参考图最多 10 张。",
             "type": "list",
             "default": [
+              "doubao-seedream-5-0-pro-260628",
               "doubao-seedream-5-0-260128",
               "doubao-seedream-4-5-251128",
               "doubao-seedream-4-0-250828"
@@ -382,7 +383,7 @@
           },
           "sequential_image_generation": {
             "description": "组图模式",
-            "hint": "auto 允许模型按提示词生成组图；disabled 仅生成单图。",
+            "hint": "auto 允许模型按提示词生成组图；disabled 仅生成单图。Seedream 5.0 Pro 不支持组图，请求中不会发送该参数。",
             "type": "string",
             "options": [
               "disabled",
@@ -392,7 +393,7 @@
           },
           "sequential_max_images": {
             "description": "组图最大生成张数",
-            "hint": "仅组图模式为 auto 时生效；参考图数量与生成图数量合计不能超过 15。",
+            "hint": "仅组图模式为 auto 时生效；参考图数量与生成图数量合计不能超过 15。Seedream 5.0 Pro 不支持组图。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -403,7 +404,7 @@
           },
           "max_reference_images": {
             "description": "最大参考图数量",
-            "hint": "限制单次请求可使用的参考图数量，最高 14 张。",
+            "hint": "限制单次请求可使用的参考图数量。非 Pro 最高 14 张；Seedream 5.0 Pro 最高 10 张。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -425,7 +426,7 @@
           },
           "enable_web_search": {
             "description": "启用联网搜索",
-            "hint": "仅部分模型支持；开启后模型可自行判断是否检索互联网内容。",
+            "hint": "仅 Seedream 5.0 lite 等支持；Seedream 5.0 Pro 不支持，开启也不会发送。",
             "type": "bool",
             "default": false
           }

@@ -42,7 +42,7 @@
 | `gemini`              | Gemini 原生 `generateContent`                                  |   ✅    |   ✅    |    ✅     | Gemini 原生图像生成接口。                                                                       |
 | `openai_chat`         | OpenAI 兼容 `chat/completions`                                 |   ✅    |   ✅    |    ❌     | 通用 Chat Completions 图像生成接口，可配置提示词前缀、输出模态和额外请求体。                    |
 | `openai`              | OpenAI Images API `/v1/images/generations`、`/v1/images/edits` |   ✅    |   ✅    |    ✅     | DALL-E / GPT Image 系列；图生图仅 GPT Image 系列支持。                                          |
-| `volcengine_ark`      | 火山方舟 Images Generations `/api/v3/images/generations`       |   ✅    |   ✅    |    ✅     | Seedream 系列，支持水印、联网搜索、提示词优化和组图相关参数。                                   |
+| `volcengine_ark`      | 火山方舟 Images Generations `/api/v3/images/generations`       |   ✅    |   ✅    |    ✅     | Seedream 系列；按模型能力发送水印、提示词优化、组图与联网搜索（5.0 Pro 自动跳过不支持参数）。   |
 | `gitee_ai`            | Gitee AI `/v1/images/generations`、`/v1/images/edits`          |   ✅    |   ✅    |    ✅     | Gitee AI 通用图像接口，可自动或手动选择生成/编辑接口。                                          |
 | `siliconflow_adapter` | SiliconFlow Images API `/v1/images/generations`                |   ✅    |   ✅    |    ✅     | 支持 Kolors、Qwen-Image、Qwen-Image-Edit、Z-Image，并可配置反向提示词、步数和提示词遵循强度。   |
 | `agnes_ai`            | Agnes AI Images API `/v1/images/generations`                   |   ✅    |   ✅    |    ✅     | 支持 `agnes-image-2.0-flash` 和 `agnes-image-2.1-flash`；参考图通过 `extra_body.image` 数组发送。 |
@@ -79,7 +79,7 @@
 
 - `openai_chat`：可配置提示词前缀、`modalities` 和额外请求体 JSON。
 - `openai`：可选择模型系列，`auto` 会按模型名识别 GPT Image 或 DALL-E 请求格式。
-- `volcengine_ark`：可配置水印、组图模式、最大参考图数量、提示词优化模式和联网搜索。
+- `volcengine_ark`：可配置水印、组图模式、最大参考图数量、提示词优化模式和联网搜索；Seedream 5.0 Pro 会自动跳过组图与联网搜索参数，并将参考图上限限制为 10。
 - `gitee_ai`：可通过图像接口模式自动或手动选择 `generations` / `edits`。
 - `siliconflow_adapter`：可配置反向提示词、推理步数和提示词遵循强度。
 - `agnes_ai`：可选择 `base64` 或 `url` 响应格式；图生图参考图通过 `extra_body.image` 数组发送。
