@@ -24,6 +24,7 @@ class ImageGenerator:
         """Create an adapter instance from configuration."""
         from ...adapter import (
             AgnesAIAdapter,
+            CodexResponsesAdapter,
             CustomHTTPAdapter,
             GeminiAdapter,
             GiteeAIAdapter,
@@ -45,6 +46,7 @@ class ImageGenerator:
             AdapterType.AGNES_AI: AgnesAIAdapter,
             AdapterType.JIMENG2API: Jimeng2APIAdapter,
             AdapterType.GROK: GrokAdapter,
+            AdapterType.CODEX_RESPONSES: CodexResponsesAdapter,
             AdapterType.CUSTOM_HTTP: CustomHTTPAdapter,
         }
 

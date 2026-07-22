@@ -1,6 +1,7 @@
 """Adapter module for the image generation plugin."""
 
 from .agnes_ai_adapter import AgnesAIAdapter
+from .codex_responses_adapter import CodexResponsesAdapter
 from .custom_http_adapter import CustomHTTPAdapter
 from .gemini_adapter import GeminiAdapter
 from .gitee_ai_adapter import GiteeAIAdapter
@@ -13,6 +14,7 @@ from .volcengine_ark_adapter import VolcengineArkAdapter
 
 __all__ = [
     "AgnesAIAdapter",
+    "CodexResponsesAdapter",
     "CustomHTTPAdapter",
     "GeminiAdapter",
     "OpenAIChatAdapter",
