@@ -48,6 +48,7 @@
 | `agnes_ai`            | Agnes AI Images API `/v1/images/generations`                   |   ✅    |   ✅    |    ✅     | 支持 `agnes-image-2.0-flash` 和 `agnes-image-2.1-flash`；参考图通过 `extra_body.image` 数组发送。 |
 | `jimeng2api`          | jimeng-api `/v1/images/generations`、`/v1/images/compositions` |   ✅    |   ✅    |    ✅     | 适用于 [iptag/jimeng-api](https://github.com/iptag/jimeng-api)，支持启动和每日自动领积分任务。   |
 | `grok`                | xAI Images API `/v1/images/generations`、`/v1/images/edits`    |   ✅    |   ✅    |    ✅     | Grok / xAI 图像生成接口。                                                                       |
+| `codex_responses`     | Codex Responses API `/codex/responses`                         |   ✅    |   ✅    |    ❌     | 固定请求 `model`、`input` 和 `image_generation` 工具；支持同步图像编辑。                         |
 | `custom_http`         | 用户自定义 HTTP JSON 接口                                      |   ✅    |   ✅    |    ✅     | 高级接口模板，详见 [自定义 HTTP 接口配置](docs/custom-http.md)。                                |
 
 > 能力开关以“模型能力”配置为准。未勾选的能力不会在请求中使用，LLM 工具参数也会按当前适配器能力动态隐藏。
@@ -83,6 +84,7 @@
 - `gitee_ai`：可通过图像接口模式自动或手动选择 `generations` / `edits`。
 - `siliconflow_adapter`：可配置反向提示词、推理步数和提示词遵循强度。
 - `agnes_ai`：可选择 `base64` 或 `url` 响应格式；图生图参考图通过 `extra_body.image` 数组发送。
+- `codex_responses`：固定向 `POST /codex/responses` 发送 `model`、`input` 与 `tools: [{"type":"image_generation","output_format":"png"}]`；填写服务根地址后会自动拼接路径，使用 Bearer API Key。无参考图时发送文本 `input`，有参考图时发送多模态 Responses `input`，仅支持同步结果；详见 [Codex Responses 接口配置](docs/codex-responses.md)。
 - `custom_http`：可配置请求方法、请求头、查询参数、请求体、图片结果路径、结果类型、错误路径和成功状态码。
 
 ### 生成与结果配置
@@ -267,6 +269,7 @@ LLM 生图工具支持 `preset`、`persona`、`aspect_ratio`、`resolution`、`i
 - 火山方舟的可用模型列表需要按控制台实际 Model ID 或 Endpoint ID 配置。
 - 配置 `jimeng2api` 后，插件会在启动时和每天日期变更后自动领取积分；仅直接连接即梦逆向服务时有效。
 - 即梦逆向图生图使用 `/v1/images/compositions`，使用中转可能会导致图生图失败。
+- Codex Responses 接口支持在单次 HTTP 请求内返回最终图片的文生图和图生图；参考图会作为多模态 `input_image` data URL 发送，但宽高比和分辨率会被忽略。若日志在约 150 秒显示 `Server disconnected`、后续任务仍成功，通常是服务端或中间网络主动断开后触发了插件重试，而不是本插件的请求超时；详见 [Codex Responses 接口配置](docs/codex-responses.md)。
 - 自定义 HTTP 接口为高级功能，建议先阅读 [自定义 HTTP 接口配置](docs/custom-http.md)。
 - 开启调试请求日志或详细错误信息时，插件会做脱敏和摘要处理，但仍建议避免在公共环境暴露日志。
 
