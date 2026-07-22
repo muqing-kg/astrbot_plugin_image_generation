@@ -1,5 +1,5 @@
 ### 更新日志
-- **Unreleased**
+- **v1.5.3-2026-07-22**
   - 新增 `codex_responses` 专用图片生成适配器，固定请求 `POST /codex/responses`，发送 `model`、`input` 和带 `output_format=png` 的 `image_generation` 工具；支持 Responses 多模态 `input_image` 图生图。
   - 支持解析 Responses 风格 `output[*].type == image_generation_call` 的 `result` 图片数据，并兼容 Base64、data URL、图片 URL 与常见中转包装字段。
   - 新增中英文 WebUI 配置模板和 Codex Responses 使用文档；支持同步文生图和图生图，不支持宽高比、分辨率、SSE 或异步轮询。
