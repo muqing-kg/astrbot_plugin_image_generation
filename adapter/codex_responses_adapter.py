@@ -19,12 +19,12 @@ class CodexResponsesAdapter(BaseImageAdapter):
     """Adapter for synchronous Codex Responses image generation endpoints."""
 
     def get_capabilities(self) -> ImageCapability:
-        """Return the capabilities defined by the Codex Responses request format."""
-        return ImageCapability.TEXT_TO_IMAGE | ImageCapability.IMAGE_TO_IMAGE
+        """Return adapter capabilities from provider configuration options."""
+        return self._get_configured_capabilities()
 
     def _pre_generate(self, _request: GenerationRequest) -> GenerationResult | None:
         """Validate the fixed endpoint configuration before making a request."""
-        if not self.model.strip():
+        if not (self.model or "").strip():
             return GenerationResult(images=None, error="未配置 Codex Responses 模型")
         _, error = self._build_responses_url()
         if error:
@@ -319,10 +319,13 @@ class CodexResponsesAdapter(BaseImageAdapter):
                 return None
 
         candidate = re.sub(r"\s+", "", candidate)
-        if not candidate:
+        # Skip short or non-base64-looking strings to avoid decoding error text.
+        if len(candidate) < 32 or not re.fullmatch(r"[A-Za-z0-9+/=]+", candidate):
             return None
         try:
-            return base64.b64decode(candidate + "=" * (-len(candidate) % 4), validate=True)
+            return base64.b64decode(
+                candidate + "=" * (-len(candidate) % 4), validate=True
+            )
         except (ValueError, binascii.Error) as exc:
             logger.warning(
                 f"{self._get_log_prefix(task_id)} 图片 Base64 解码失败: "
@@ -331,7 +334,8 @@ class CodexResponsesAdapter(BaseImageAdapter):
             return None
 
     async def _download_image_from_url(
-        self, url: str, task_id: str | None) -> bytes | None:
+        self, url: str, task_id: str | None
+    ) -> bytes | None:
         """Download an absolute image URL without forwarding the provider API key."""
         prefix = self._get_log_prefix(task_id)
         try:
