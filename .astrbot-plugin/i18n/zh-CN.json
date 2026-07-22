@@ -292,6 +292,11 @@
             ]
           }
         },
+        "codex_responses": {
+          "capability_options": {
+            "labels": ["文生图", "图生图"]
+          }
+        },
         "custom_http": {
           "request_method": {
             "labels": [

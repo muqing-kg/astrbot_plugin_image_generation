@@ -21,6 +21,7 @@ class VolcengineArkAdapter(BaseImageAdapter):
 
     DEFAULT_BASE_URL = VOLCENGINE_ARK_DEFAULT_BASE_URL
 
+    # Generic Seedream pixel maps used by 4.x / 5.0 lite.
     SIZE_MAPS: dict[str, dict[str, str]] = {
         "1K": {
             "1:1": "1024x1024",
@@ -69,6 +70,34 @@ class VolcengineArkAdapter(BaseImageAdapter):
             "21:9": "6240x2656",
             "4:5": "3520x4704",
             "5:4": "4704x3520",
+        },
+    }
+
+    # Seedream 5.0 Pro official sample pixel maps (1K / 2K only).
+    PRO_SIZE_MAPS: dict[str, dict[str, str]] = {
+        "1K": {
+            "1:1": "1024x1024",
+            "4:3": "1152x864",
+            "3:4": "864x1152",
+            "16:9": "1424x800",
+            "9:16": "800x1424",
+            "3:2": "1248x832",
+            "2:3": "832x1248",
+            "21:9": "1568x672",
+            "4:5": "864x1152",
+            "5:4": "1152x864",
+        },
+        "2K": {
+            "1:1": "2048x2048",
+            "4:3": "2368x1776",
+            "3:4": "1776x2368",
+            "16:9": "2816x1584",
+            "9:16": "1584x2816",
+            "3:2": "2496x1664",
+            "2:3": "1664x2496",
+            "21:9": "3136x1344",
+            "4:5": "1776x2368",
+            "5:4": "2368x1776",
         },
     }
 
@@ -150,30 +179,81 @@ class VolcengineArkAdapter(BaseImageAdapter):
         """Return the active model name."""
         return self.model or "doubao-seedream-5.0-lite"
 
+    def _model_name_lower(self) -> str:
+        """Return the lower-cased active model name."""
+        return self._model_name().lower()
+
+    def _is_seedream_pro(self) -> bool:
+        """Return whether the active model is Seedream 5.0 Pro."""
+        model = self._model_name_lower()
+        return "seedream-5-0-pro" in model or "seedream-5.0-pro" in model
+
+    def _is_seedream_5_lite(self) -> bool:
+        """Return whether the active model is Seedream 5.0 lite (not Pro)."""
+        if self._is_seedream_pro():
+            return False
+        model = self._model_name_lower()
+        return "seedream-5.0" in model or "seedream-5-0" in model
+
+    def _supports_sequential_image_generation(self) -> bool:
+        """Return whether sequential image generation is supported."""
+        # Seedream 5.0 Pro does not support image-set generation.
+        return not self._is_seedream_pro()
+
+    def _supports_web_search(self) -> bool:
+        """Return whether web search tools are supported."""
+        # Official docs: only Seedream 5.0 lite supports web_search.
+        return self._is_seedream_5_lite()
+
+    def _max_reference_images_limit(self) -> int:
+        """Return the model-specific max reference image count."""
+        # Pro supports up to 10; other Seedream models commonly allow up to 14.
+        return 10 if self._is_seedream_pro() else 14
+
+    def _size_maps_for_model(self) -> dict[str, dict[str, str]]:
+        """Return pixel size maps for the active model family."""
+        return self.PRO_SIZE_MAPS if self._is_seedream_pro() else self.SIZE_MAPS
+
     def _resolve_size(self, request: GenerationRequest) -> str | None:
-        """Resolve the Ark size parameter from config, resolution, and aspect ratio."""
-        if (
-            not request.aspect_ratio
-            or request.aspect_ratio == UNSPECIFIED_OPTION
-            or not request.resolution
-            or request.resolution == UNSPECIFIED_OPTION
-        ):
+        """Resolve the Ark size parameter from resolution and aspect ratio.
+
+        Seedream accepts either a resolution tier (e.g. ``2K``) or exact
+        ``widthxheight`` pixels. When only resolution is set, send the tier.
+        When both resolution and aspect ratio are set, send mapped pixels.
+        """
+        resolution_unspecified = (
+            not request.resolution or request.resolution == UNSPECIFIED_OPTION
+        )
+        aspect_unspecified = (
+            not request.aspect_ratio or request.aspect_ratio == UNSPECIFIED_OPTION
+        )
+
+        if resolution_unspecified and aspect_unspecified:
+            return None
+
+        if not resolution_unspecified and aspect_unspecified:
+            return self._normalize_resolution(request.resolution)
+
+        if resolution_unspecified:
             return None
 
         resolution = self._normalize_resolution(request.resolution)
         aspect_ratio = request.aspect_ratio
-
-        return self.SIZE_MAPS.get(resolution, self.SIZE_MAPS["2K"]).get(
-            aspect_ratio, self.SIZE_MAPS[resolution]["1:1"]
-        )
+        size_maps = self._size_maps_for_model()
+        resolution_map = size_maps.get(resolution) or size_maps["2K"]
+        return resolution_map.get(aspect_ratio, resolution_map["1:1"])
 
     def _normalize_resolution(self, resolution: str | None) -> str:
         """Map plugin resolution values to sizes supported by the selected model."""
         value = resolution or "2K"
-        model = self._model_name().lower()
+        model = self._model_name_lower()
 
+        # Seedream 5.0 Pro: 1K / 2K only.
+        if self._is_seedream_pro():
+            return value if value in {"1K", "2K"} else "2K"
         if "seedream-4.0" in model or "seedream-4-0" in model:
             return value if value in {"1K", "2K", "4K"} else "2K"
+        # Seedream 5.0 lite: 2K / 3K / 4K.
         if "seedream-5.0" in model or "seedream-5-0" in model:
             return value if value in {"2K", "3K", "4K"} else "2K"
         return value if value in {"2K", "4K"} else "2K"
@@ -182,11 +262,12 @@ class VolcengineArkAdapter(BaseImageAdapter):
         self, payload: dict[str, Any], images: list[ImageData], task_id: str | None
     ) -> None:
         """Add reference images as Ark-supported data URLs."""
+        limit = self._max_reference_images_limit()
         max_images = self._coerce_int(
             self.config.extra.get("max_reference_images"),
-            default=14,
+            default=limit,
             min_value=1,
-            max_value=14,
+            max_value=limit,
         )
         selected_images = images[:max_images]
         if len(images) > max_images:
@@ -204,30 +285,39 @@ class VolcengineArkAdapter(BaseImageAdapter):
         return f"data:{mime_type};base64,{b64_data}"
 
     def _add_extra_options(self, payload: dict[str, Any]) -> None:
-        """Add optional Volcengine Ark generation parameters."""
+        """Add optional Volcengine Ark generation parameters.
+
+        Model-specific unsupported fields are omitted to avoid 400 errors
+        (e.g. Seedream 5.0 Pro rejects sequential_image_generation).
+        """
         extra = self.config.extra
 
         payload["watermark"] = self._coerce_bool(extra.get("watermark"), default=True)
 
-        sequential = str(extra.get("sequential_image_generation") or "disabled").strip()
-        if sequential in {"auto", "disabled"}:
-            payload["sequential_image_generation"] = sequential
-            if sequential == "auto":
-                max_images = self._coerce_int(
-                    extra.get("sequential_max_images"),
-                    default=15,
-                    min_value=1,
-                    max_value=15,
-                )
-                payload["sequential_image_generation_options"] = {
-                    "max_images": max_images
-                }
+        if self._supports_sequential_image_generation():
+            sequential = str(
+                extra.get("sequential_image_generation") or "disabled"
+            ).strip()
+            if sequential in {"auto", "disabled"}:
+                payload["sequential_image_generation"] = sequential
+                if sequential == "auto":
+                    max_images = self._coerce_int(
+                        extra.get("sequential_max_images"),
+                        default=15,
+                        min_value=1,
+                        max_value=15,
+                    )
+                    payload["sequential_image_generation_options"] = {
+                        "max_images": max_images
+                    }
 
         optimize_mode = str(extra.get("optimize_prompt_mode") or "").strip()
         if optimize_mode in {"standard", "fast"}:
             payload["optimize_prompt_options"] = {"mode": optimize_mode}
 
-        if self._coerce_bool(extra.get("enable_web_search"), default=False):
+        if self._supports_web_search() and self._coerce_bool(
+            extra.get("enable_web_search"), default=False
+        ):
             payload["tools"] = [{"type": "web_search"}]
 
     async def _extract_images(

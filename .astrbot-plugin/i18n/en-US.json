@@ -351,7 +351,7 @@
           },
           "sequential_image_generation": {
             "description": "Image set mode",
-            "hint": "auto allows the model to generate an image set from the prompt. disabled only generates a single image.",
+            "hint": "auto allows the model to generate an image set from the prompt. disabled only generates a single image. Seedream 5.0 Pro does not support image sets; this field is omitted for Pro.",
             "labels": [
               "Disabled",
               "Auto"
@@ -359,11 +359,11 @@
           },
           "sequential_max_images": {
             "description": "Maximum images in image set",
-            "hint": "Only effective when image set mode is auto. The total number of reference images and generated images cannot exceed 15."
+            "hint": "Only effective when image set mode is auto. The total number of reference images and generated images cannot exceed 15. Seedream 5.0 Pro does not support image sets."
           },
           "max_reference_images": {
             "description": "Maximum reference images",
-            "hint": "Limit the number of reference images used in a single request, up to 14."
+            "hint": "Limit the number of reference images used in a single request. Non-Pro models allow up to 14; Seedream 5.0 Pro allows up to 10."
           },
           "optimize_prompt_mode": {
             "description": "Prompt optimization mode",
@@ -376,7 +376,7 @@
           },
           "enable_web_search": {
             "description": "Enable web search",
-            "hint": "Supported only by some models. When enabled, the model can decide whether to search the internet."
+            "hint": "Supported by Seedream 5.0 lite and similar models. Seedream 5.0 Pro does not support it; the field is omitted for Pro."
           }
         },
         "siliconflow_adapter": {
@@ -596,6 +596,39 @@
           "max_retry_attempts": {
             "description": "Retry count override",
             "hint": "Set to 0 to use the retry count from Runtime Control."
+          }
+        },
+        "codex_responses": {
+          "name": "Codex Responses API",
+          "hint": "Calls the fixed POST /codex/responses image-generation endpoint. The request always contains model, input, and an image_generation tool with output_format=png, and the API must return the image in the same response.",
+          "base_url": {
+            "description": "API endpoint",
+            "hint": "Enter the official OpenAI Codex endpoint https://chatgpt.com/backend-api/codex/responses, or its service root https://chatgpt.com/backend-api. The plugin normalizes the URL and appends /codex/responses; do not include query parameters."
+          },
+          "proxy": {
+            "description": "Proxy URL",
+            "hint": "Optional. Example: http://127.0.0.1:7890."
+          },
+          "api_keys": {
+            "description": "API keys",
+            "hint": "Sent with Authorization: Bearer <API Key>. Multiple keys are rotated when a request is retried."
+          },
+          "available_models": {
+            "description": "Available models",
+            "hint": "Used by the /生图模型 command. Enter a Codex model supported by the configured endpoint."
+          },
+          "capability_options": {
+            "description": "Model capabilities",
+            "hint": "This protocol supports text-to-image and image editing. When reference images are present, they are sent through a multimodal Responses input; aspect ratios and resolutions are not sent to the Codex Responses request.",
+            "labels": ["Text to image", "Image to image"]
+          },
+          "timeout": {
+            "description": "Timeout override (seconds)",
+            "hint": "Set to 0 to use the timeout from Runtime Control."
+          },
+          "max_retry_attempts": {
+            "description": "Retry count override",
+            "hint": "Set to 0 to use the retry count from Runtime Control. API keys are rotated between retry attempts."
           }
         },
         "custom_http": {

@@ -327,9 +327,10 @@
           },
           "available_models": {
             "description": "可用模型列表",
-            "hint": "用于 /生图模型 命令切换；请按控制台实际模型 ID 或 Endpoint ID 维护。",
+            "hint": "用于 /生图模型 命令切换；请按控制台实际模型 ID 或 Endpoint ID 维护。Seedream 5.0 Pro 不支持组图与联网搜索，参考图最多 10 张。",
             "type": "list",
             "default": [
+              "doubao-seedream-5-0-pro-260628",
               "doubao-seedream-5-0-260128",
               "doubao-seedream-4-5-251128",
               "doubao-seedream-4-0-250828"
@@ -382,7 +383,7 @@
           },
           "sequential_image_generation": {
             "description": "组图模式",
-            "hint": "auto 允许模型按提示词生成组图；disabled 仅生成单图。",
+            "hint": "auto 允许模型按提示词生成组图；disabled 仅生成单图。Seedream 5.0 Pro 不支持组图，请求中不会发送该参数。",
             "type": "string",
             "options": [
               "disabled",
@@ -392,7 +393,7 @@
           },
           "sequential_max_images": {
             "description": "组图最大生成张数",
-            "hint": "仅组图模式为 auto 时生效；参考图数量与生成图数量合计不能超过 15。",
+            "hint": "仅组图模式为 auto 时生效；参考图数量与生成图数量合计不能超过 15。Seedream 5.0 Pro 不支持组图。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -403,7 +404,7 @@
           },
           "max_reference_images": {
             "description": "最大参考图数量",
-            "hint": "限制单次请求可使用的参考图数量，最高 14 张。",
+            "hint": "限制单次请求可使用的参考图数量。非 Pro 最高 14 张；Seedream 5.0 Pro 最高 10 张。",
             "type": "int",
             "slider": {
               "min": 1,
@@ -425,7 +426,7 @@
           },
           "enable_web_search": {
             "description": "启用联网搜索",
-            "hint": "仅部分模型支持；开启后模型可自行判断是否检索互联网内容。",
+            "hint": "仅 Seedream 5.0 lite 等支持；Seedream 5.0 Pro 不支持，开启也不会发送。",
             "type": "bool",
             "default": false
           }
@@ -888,6 +889,79 @@
           "max_retry_attempts": {
             "description": "重试次数覆盖",
             "hint": "填 0 表示使用“运行控制”中的重试次数。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 1
+            },
+            "default": 0
+          }
+        }
+      },
+      "codex_responses": {
+        "name": "Codex Responses 接口",
+        "hint": "调用固定的 POST /codex/responses 图像生成接口。请求体固定使用 model、input 和 image_generation 工具（output_format=png），并要求接口在同一次响应中返回图片。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "description": "供应商名称",
+            "hint": "用于显示和模型选择；格式为“供应商名称/模型名称”。",
+            "type": "string",
+            "default": "Codex Responses"
+          },
+          "base_url": {
+            "description": "接口地址",
+            "hint": "填写 OpenAI 官方 Codex 入口 https://chatgpt.com/backend-api/codex/responses，或填写根地址 https://chatgpt.com/backend-api；插件会自动规范化并拼接 /codex/responses，不要填写查询参数。",
+            "type": "string",
+            "default": ""
+          },
+          "proxy": {
+            "description": "代理地址",
+            "hint": "可选，示例：http://127.0.0.1:7890。",
+            "type": "string",
+            "default": ""
+          },
+          "api_keys": {
+            "description": "API 密钥",
+            "hint": "使用 Authorization: Bearer <API Key> 发送；可配置多个用于失败重试时轮换。",
+            "type": "list",
+            "default": []
+          },
+          "available_models": {
+            "description": "可用模型列表",
+            "hint": "用于 /生图模型 命令切换；请按接口实际支持的 Codex 模型填写。",
+            "type": "list",
+            "default": []
+          },
+          "capability_options": {
+            "description": "模型能力",
+            "hint": "支持文生图和图生图：有参考图时会使用 Responses 多模态 input 发送图片；宽高比和分辨率不会发送到 Codex Responses 请求。",
+            "type": "list",
+            "options": [
+              "文生图",
+              "图生图"
+            ],
+            "default": [
+              "文生图",
+              "图生图"
+            ]
+          },
+          "timeout": {
+            "description": "超时时间覆盖（秒）",
+            "hint": "填 0 表示使用“运行控制”中的超时时间。",
+            "type": "int",
+            "slider": {
+              "min": 0,
+              "max": 600,
+              "step": 10
+            },
+            "default": 0
+          },
+          "max_retry_attempts": {
+            "description": "重试次数覆盖",
+            "hint": "填 0 表示使用“运行控制”中的重试次数；重试时会自动轮换 API Key。",
             "type": "int",
             "slider": {
               "min": 0,
