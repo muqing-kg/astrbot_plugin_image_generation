@@ -83,6 +83,42 @@ jobs:
           if git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD; then
             echo "status=already_up_to_date" >> "$GITHUB_OUTPUT"
             echo "Fork already contains upstream. Nothing to merge."
+
+            # Still enforce fork identity even when there is no upstream delta.
+            python3 - <<'PY'
+from pathlib import Path
+path = Path("metadata.yaml")
+text = path.read_text(encoding="utf-8")
+lines = []
+for line in text.splitlines():
+    if line.startswith("author:"):
+        lines.append("author: muqing-kg")
+    elif line.startswith("repo:"):
+        lines.append("repo: https://github.com/muqing-kg/astrbot_plugin_image_generation")
+    else:
+        lines.append(line)
+new_text = "\n".join(lines) + "\n"
+if new_text != text:
+    path.write_text(new_text, encoding="utf-8")
+    print("Rewrote metadata author/repo to fork identity.")
+else:
+    print("metadata author/repo already point to fork.")
+PY
+            if ! git diff --quiet -- metadata.yaml; then
+              git add metadata.yaml
+              git commit -m "chore: keep fork author/repo identity after upstream sync"
+              echo "identity_commit=true" >> "$GITHUB_OUTPUT"
+              if [[ "${DRY_RUN}" == "true" ]]; then
+                echo "Dry run: skip push of identity commit."
+                echo "pushed=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              git push origin HEAD
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "identity_commit=false" >> "$GITHUB_OUTPUT"
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
 
