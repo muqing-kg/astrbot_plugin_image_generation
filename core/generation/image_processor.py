@@ -504,12 +504,14 @@ class ImageProcessor:
             if depth > 3 or obj is None:
                 return
             if isinstance(obj, dict):
-                # Prefer WeChatBridge proxy first, then remote wx.qlogo / avatar fields.
+                # Prefer inline/DB remote avatar fields, then local proxy.
                 for key in (
-                    "avatar_proxy_url",
+                    "avatar_base64",
+                    "avatar_data_url",
                     "avatar_url",
                     "wx_avatar_url",
                     "avatar",
+                    "avatar_proxy_url",
                     "user_avatar",
                     "headimg",
                     "head_img",
@@ -620,7 +622,7 @@ class ImageProcessor:
     ) -> ImageData | None:
         """Fetch a user's avatar as validated ImageData.
 
-        Prefer platform APIs (WeChatBridge returns wx.qlogo / avatar proxy URLs).
+        Prefer platform APIs (WeChatBridge returns DB remote avatar URLs, usually wx.qlogo).
         Fall back to QQ qlogo CDN only when safe:
         - user id looks like a QQ UIN, and
         - platform payload/name does not indicate WeChatBridge/WeChat.
@@ -643,13 +645,28 @@ class ImageProcessor:
                 )
 
             # Keep order, drop duplicates.
+            # Prefer inline base64/data first, then local avatar proxy, then remote.
             seen: set[str] = set()
             ordered: list[str] = []
+            inline_first: list[str] = []
+            proxy_first: list[str] = []
+            others: list[str] = []
             for url in candidates:
                 if url in seen:
                     continue
                 seen.add(url)
-                ordered.append(url)
+                lower = url.lower()
+                if lower.startswith("data:image/") or lower.startswith("base64://"):
+                    inline_first.append(url)
+                elif (
+                    "/avatar/" in lower
+                    or "host.docker.internal" in lower
+                    or "avatar_proxy" in lower
+                ):
+                    proxy_first.append(url)
+                else:
+                    others.append(url)
+            ordered = inline_first + proxy_first + others
 
             if not ordered:
                 logger.debug(
@@ -659,22 +676,30 @@ class ImageProcessor:
                 return None
 
             for url in ordered:
-                image = await self.download_image(url)
-                if image is not None:
-                    return image
-                # Lightweight fallback for pure HTTP when download_image path fails.
-                if not url.lower().startswith(("http://", "https://")):
-                    continue
-                file_name = f"avatar_{uid}_{abs(hash(url)) % 10_000_000}.jpg"
-                path = os.path.join(self._temp_dir, file_name)
-                path = await download_image_by_url(url, path=path)
-                if not path:
-                    continue
-                with open(path, "rb") as f:
-                    data = f.read()
-                validated = self.validate_image_data(data, log_source=url)
-                if validated is not None:
-                    return validated
+                attempts = 3 if (
+                    "/avatar/" in url.lower()
+                    or "host.docker.internal" in url.lower()
+                ) else 1
+                for attempt in range(attempts):
+                    if attempt > 0:
+                        # Wait for bridge background prefetch; cold cache may 404 first.
+                        time.sleep(0.55 * attempt)
+                    image = await self.download_image(url)
+                    if image is not None:
+                        return image
+                    # Lightweight fallback for pure HTTP when download_image path fails.
+                    if not url.lower().startswith(("http://", "https://")):
+                        break
+                    file_name = f"avatar_{uid}_{abs(hash(url)) % 10_000_000}.jpg"
+                    path = os.path.join(self._temp_dir, file_name)
+                    path = await download_image_by_url(url, path=path)
+                    if not path:
+                        continue
+                    with open(path, "rb") as f:
+                        data = f.read()
+                    validated = self.validate_image_data(data, log_source=url)
+                    if validated is not None:
+                        return validated
             logger.debug(
                 f"{LOG} 头像下载失败 (user_id={mask_sensitive(uid)}, "
                 f"candidates={len(ordered)}, forbid_qlogo={forbid_qlogo})"

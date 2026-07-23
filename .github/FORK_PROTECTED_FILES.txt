@@ -1,10 +1,12 @@
 # Paths that must never be overwritten by upstream auto-sync.
 # On merge conflict, these files always keep the fork version (ours).
 # Other conflicting files take upstream (theirs).
+#
+# Note: metadata.yaml is intentionally NOT fully protected so version can track upstream.
+# The sync workflow rewrites author/repo to this fork after every merge.
 
 core/generation/image_processor.py
 core/generation/reference_collector.py
-metadata.yaml
 CHANGELOG.md
 .github/FORK_PROTECTED_FILES.txt
 .github/workflows/sync-upstream.yml

@@ -149,6 +149,35 @@ jobs:
             echo "theirs_count=${#RESOLVED_THEIRS[@]}" >> "$GITHUB_OUTPUT"
           fi
 
+          # Ensure fork identity fields always point to this repository.
+          # Version stays whatever the merge produced (tracks upstream when not conflicting).
+          python3 - <<'PY'
+from pathlib import Path
+path = Path("metadata.yaml")
+text = path.read_text(encoding="utf-8")
+lines = []
+for line in text.splitlines():
+    if line.startswith("author:"):
+        lines.append("author: muqing-kg")
+    elif line.startswith("repo:"):
+        lines.append("repo: https://github.com/muqing-kg/astrbot_plugin_image_generation")
+    else:
+        lines.append(line)
+new_text = "\n".join(lines) + "\n"
+if new_text != text:
+    path.write_text(new_text, encoding="utf-8")
+    print("Rewrote metadata author/repo to fork identity.")
+else:
+    print("metadata author/repo already point to fork.")
+PY
+          if ! git diff --quiet -- metadata.yaml; then
+            git add metadata.yaml
+            git commit -m "chore: keep fork author/repo identity after upstream sync"
+            echo "identity_commit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "identity_commit=false" >> "$GITHUB_OUTPUT"
+          fi
+
           AFTER="$(git rev-parse HEAD)"
           echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
           echo "after=$AFTER" >> "$GITHUB_OUTPUT"
@@ -182,5 +211,5 @@ jobs:
             echo "- after: \`${{ steps.merge.outputs.after || 'n/a' }}\`"
             echo
             echo "Protected files are listed in \`.github/FORK_PROTECTED_FILES.txt\`."
-            echo "On conflict, those paths always keep the fork version so WeChat/image patches stay intact."
+            echo "On conflict, protected paths keep the fork version so WeChat/image patches stay intact. metadata.yaml tracks upstream version, then author/repo are rewritten to this fork."
           } >> "$GITHUB_STEP_SUMMARY"
